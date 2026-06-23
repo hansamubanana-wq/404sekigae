@@ -6,19 +6,17 @@
 <title>404 席替えツール</title>
 
 <style>
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
 body {
   margin: 0;
   min-height: 100vh;
   font-family: "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
   background:
-    radial-gradient(circle at top left, #dff7ff, transparent 35%),
-    radial-gradient(circle at bottom right, #ffe3ef, transparent 35%),
-    linear-gradient(135deg, #f7fbff, #f8f4ff);
-  color: #243044;
+    radial-gradient(circle at 15% 10%, #c7f0ff, transparent 28%),
+    radial-gradient(circle at 90% 85%, #ffd6e8, transparent 30%),
+    linear-gradient(135deg, #f8fbff, #f7f2ff);
+  color: #1f2937;
   padding: 28px;
 }
 
@@ -38,12 +36,12 @@ body {
 h1 {
   margin: 0;
   font-size: 34px;
-  letter-spacing: .04em;
 }
 
 .sub {
-  color: #6b7280;
+  color: #64748b;
   margin-top: 4px;
+  font-weight: 600;
 }
 
 .controls {
@@ -56,31 +54,36 @@ button {
   border: 0;
   padding: 12px 18px;
   border-radius: 999px;
-  font-weight: 800;
+  font-weight: 900;
   cursor: pointer;
   color: white;
   background: linear-gradient(135deg, #2563eb, #7c3aed);
-  box-shadow: 0 8px 18px rgba(37, 99, 235, .25);
+  box-shadow: 0 10px 22px rgba(37, 99, 235, .25);
+  transition: .15s;
 }
 
 button.secondary {
   background: white;
   color: #334155;
-  border: 1px solid #d7deea;
-  box-shadow: 0 6px 16px rgba(15, 23, 42, .08);
+  border: 1px solid #d8e0ec;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, .08);
 }
 
-button:hover {
-  transform: translateY(-1px);
+button:hover { transform: translateY(-1px); }
+
+button:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .classroom {
-  background: rgba(255,255,255,.78);
-  backdrop-filter: blur(14px);
+  background: rgba(255,255,255,.8);
+  backdrop-filter: blur(16px);
   border: 1px solid rgba(255,255,255,.9);
   border-radius: 28px;
   padding: 28px;
-  box-shadow: 0 24px 60px rgba(31, 41, 55, .14);
+  box-shadow: 0 28px 70px rgba(31, 41, 55, .15);
 }
 
 .front {
@@ -90,15 +93,14 @@ button:hover {
 }
 
 .desk {
-  width: 220px;
+  width: 230px;
   text-align: center;
-  padding: 12px;
-  border-radius: 14px;
-  background: #243044;
+  padding: 13px;
+  border-radius: 15px;
+  background: #1e293b;
   color: white;
   font-weight: 900;
-  letter-spacing: .2em;
-  box-shadow: inset 0 -4px 0 rgba(255,255,255,.12);
+  letter-spacing: .24em;
 }
 
 .grid {
@@ -108,21 +110,41 @@ button:hover {
 }
 
 .seat {
-  min-height: 86px;
+  min-height: 88px;
   border-radius: 18px;
   padding: 10px 12px;
-  background: linear-gradient(180deg, #ffffff, #eef7ff);
-  border: 2px solid #9bc7f0;
-  box-shadow: 0 8px 18px rgba(30, 64, 175, .10);
+  background: linear-gradient(180deg, #ffffff, #edf7ff);
+  border: 2px solid #8fc5f2;
+  box-shadow: 0 10px 20px rgba(30, 64, 175, .10);
   cursor: pointer;
   position: relative;
-  transition: .15s;
+  transition: .18s;
 }
 
 .seat.girl {
   background: linear-gradient(180deg, #ffffff, #fff0f6);
   border-color: #f3a6c4;
-  box-shadow: 0 8px 18px rgba(190, 24, 93, .10);
+  box-shadow: 0 10px 20px rgba(190, 24, 93, .10);
+}
+
+.seat.hidden {
+  opacity: .18;
+  filter: blur(2px);
+}
+
+.seat.reveal {
+  animation: reveal .45s ease both;
+}
+
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: scale(.78) translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .seat:hover {
@@ -134,7 +156,7 @@ button:hover {
 }
 
 .empty {
-  min-height: 86px;
+  min-height: 88px;
   border-radius: 18px;
   border: 2px dashed #cbd5e1;
   background: rgba(255,255,255,.35);
@@ -142,7 +164,7 @@ button:hover {
 
 .no {
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 900;
   color: #64748b;
 }
 
@@ -164,8 +186,28 @@ button:hover {
   top: 8px;
 }
 
+.announcement {
+  margin-top: 20px;
+  min-height: 72px;
+  padding: 18px;
+  border-radius: 20px;
+  background: #111827;
+  color: white;
+  text-align: center;
+  font-weight: 900;
+  font-size: 24px;
+  box-shadow: 0 18px 35px rgba(15, 23, 42, .22);
+}
+
+.announcement small {
+  display: block;
+  font-size: 13px;
+  opacity: .7;
+  margin-bottom: 4px;
+}
+
 .note {
-  margin-top: 18px;
+  margin-top: 14px;
   color: #64748b;
   font-size: 13px;
 }
@@ -175,11 +217,9 @@ button:hover {
     background: white;
     padding: 0;
   }
-
-  .controls, .note {
+  .controls, .note, .announcement {
     display: none;
   }
-
   .classroom {
     box-shadow: none;
     border: none;
@@ -193,12 +233,12 @@ button:hover {
   <div class="header">
     <div>
       <h1>404 席替えツール</h1>
-      <div class="sub">左上から右下へ、出席番号順で初期配置</div>
+      <div class="sub">初期状態は左上から下方向に出席番号順</div>
     </div>
 
     <div class="controls">
-      <button onclick="shuffleSeats()">席替えする</button>
-      <button class="secondary" onclick="resetSeats()">元に戻す</button>
+      <button id="shuffleBtn" onclick="shuffleSeats()">席替えする</button>
+      <button class="secondary" id="resetBtn" onclick="resetSeats()">元に戻す</button>
       <button class="secondary" onclick="window.print()">印刷</button>
     </div>
   </div>
@@ -209,6 +249,11 @@ button:hover {
     </div>
 
     <div id="grid" class="grid"></div>
+
+    <div id="announcement" class="announcement">
+      <small>発表</small>
+      席替えボタンを押してスタート
+    </div>
 
     <div class="note">席をクリックすると固定できます。固定席は席替えしても動きません。</div>
   </div>
@@ -258,19 +303,24 @@ const studentsOriginal = [
 ];
 
 const emptyPositions = new Set([
-  "0-0", // 左前
-  "0-6", // 右前
-  "5-0"  // 左後ろ
+  "0-0",
+  "0-6",
+  "5-0"
 ]);
 
-let students = structuredClone(studentsOriginal);
-let locked = new Set();
+const rows = 6;
+const cols = 7;
 
-function getSeatPositions() {
+let seats = createInitialSeats();
+let locked = new Set();
+let revealing = false;
+let visibleSeats = new Set();
+
+function createSeatPositionsColumnFirst() {
   const positions = [];
 
-  for (let row = 0; row < 6; row++) {
-    for (let col = 0; col < 7; col++) {
+  for (let col = 0; col < cols; col++) {
+    for (let row = 0; row < rows; row++) {
       const key = `${row}-${col}`;
       if (!emptyPositions.has(key)) {
         positions.push(key);
@@ -281,16 +331,26 @@ function getSeatPositions() {
   return positions;
 }
 
-const seatPositions = getSeatPositions();
+const realSeatPositions = createSeatPositionsColumnFirst();
+
+function createInitialSeats() {
+  const result = {};
+  const sorted = [...studentsOriginal].sort((a, b) => a.no - b.no);
+  const positions = createSeatPositionsColumnFirst();
+
+  sorted.forEach((student, i) => {
+    result[positions[i]] = student;
+  });
+
+  return result;
+}
 
 function render() {
   const grid = document.getElementById("grid");
   grid.innerHTML = "";
 
-  let studentIndex = 0;
-
-  for (let row = 0; row < 6; row++) {
-    for (let col = 0; col < 7; col++) {
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
       const key = `${row}-${col}`;
 
       if (emptyPositions.has(key)) {
@@ -300,15 +360,17 @@ function render() {
         continue;
       }
 
-      const s = students[studentIndex];
-      const index = studentIndex;
-
+      const s = seats[key];
       const seat = document.createElement("div");
+
       seat.className = `seat ${s.gender}`;
-      if (locked.has(index)) seat.classList.add("locked");
+      if (locked.has(key)) seat.classList.add("locked");
+      if (revealing && !visibleSeats.has(key)) seat.classList.add("hidden");
+      if (revealing && visibleSeats.has(key)) seat.classList.add("reveal");
 
       seat.onclick = () => {
-        locked.has(index) ? locked.delete(index) : locked.add(index);
+        if (revealing) return;
+        locked.has(key) ? locked.delete(key) : locked.add(key);
         render();
       };
 
@@ -316,11 +378,10 @@ function render() {
         <div class="no">404-${s.no}</div>
         <div class="kana">${s.kana}</div>
         <div class="name">${s.name}</div>
-        <div class="lock">${locked.has(index) ? "🔒" : ""}</div>
+        <div class="lock">${locked.has(key) ? "🔒" : ""}</div>
       `;
 
       grid.appendChild(seat);
-      studentIndex++;
     }
   }
 }
@@ -336,24 +397,73 @@ function shuffleArray(array) {
   return a;
 }
 
-function shuffleSeats() {
-  const movableIndexes = students
-    .map((_, i) => i)
-    .filter(i => !locked.has(i));
+async function shuffleSeats() {
+  if (revealing) return;
 
-  const movableStudents = movableIndexes.map(i => students[i]);
-  const shuffled = shuffleArray(movableStudents);
+  document.getElementById("shuffleBtn").disabled = true;
+  document.getElementById("resetBtn").disabled = true;
 
-  movableIndexes.forEach((index, i) => {
-    students[index] = shuffled[i];
+  const movablePositions = realSeatPositions.filter(pos => !locked.has(pos));
+  const movableStudents = movablePositions.map(pos => seats[pos]);
+  const shuffledStudents = shuffleArray(movableStudents);
+
+  movablePositions.forEach((pos, i) => {
+    seats[pos] = shuffledStudents[i];
   });
+
+  revealing = true;
+  visibleSeats = new Set([...locked]);
+
+  document.getElementById("announcement").innerHTML =
+    `<small>席替え中</small>順番に発表します…`;
+
+  render();
+
+  const revealOrder = shuffleArray(movablePositions);
+
+  for (const pos of revealOrder) {
+    visibleSeats.add(pos);
+
+    const s = seats[pos];
+    const [row, col] = pos.split("-").map(Number);
+
+    document.getElementById("announcement").innerHTML = `
+      <small>${row + 1}列目・${col + 1}番</small>
+      404-${s.no}　${s.name}
+    `;
+
+    render();
+
+    await sleep(450);
+  }
+
+  revealing = false;
+  visibleSeats.clear();
+
+  document.getElementById("announcement").innerHTML =
+    `<small>完了</small>席替え完了！`;
+
+  document.getElementById("shuffleBtn").disabled = false;
+  document.getElementById("resetBtn").disabled = false;
 
   render();
 }
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 function resetSeats() {
-  students = structuredClone(studentsOriginal);
+  if (revealing) return;
+
+  seats = createInitialSeats();
   locked.clear();
+  visibleSeats.clear();
+  revealing = false;
+
+  document.getElementById("announcement").innerHTML =
+    `<small>発表</small>席替えボタンを押してスタート`;
+
   render();
 }
 
