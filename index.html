@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>404 席替えツール</title>
+
+<style>
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  background:
+    radial-gradient(circle at top left, #dff7ff, transparent 35%),
+    radial-gradient(circle at bottom right, #ffe3ef, transparent 35%),
+    linear-gradient(135deg, #f7fbff, #f8f4ff);
+  color: #243044;
+  padding: 28px;
+}
+
+.app {
+  max-width: 1180px;
+  margin: auto;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 34px;
+  letter-spacing: .04em;
+}
+
+.sub {
+  color: #6b7280;
+  margin-top: 4px;
+}
+
+.controls {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+button {
+  border: 0;
+  padding: 12px 18px;
+  border-radius: 999px;
+  font-weight: 800;
+  cursor: pointer;
+  color: white;
+  background: linear-gradient(135deg, #2563eb, #7c3aed);
+  box-shadow: 0 8px 18px rgba(37, 99, 235, .25);
+}
+
+button.secondary {
+  background: white;
+  color: #334155;
+  border: 1px solid #d7deea;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, .08);
+}
+
+button:hover {
+  transform: translateY(-1px);
+}
+
+.classroom {
+  background: rgba(255,255,255,.78);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255,255,255,.9);
+  border-radius: 28px;
+  padding: 28px;
+  box-shadow: 0 24px 60px rgba(31, 41, 55, .14);
+}
+
+.front {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 26px;
+}
+
+.desk {
+  width: 220px;
+  text-align: center;
+  padding: 12px;
+  border-radius: 14px;
+  background: #243044;
+  color: white;
+  font-weight: 900;
+  letter-spacing: .2em;
+  box-shadow: inset 0 -4px 0 rgba(255,255,255,.12);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 16px;
+}
+
+.seat {
+  min-height: 86px;
+  border-radius: 18px;
+  padding: 10px 12px;
+  background: linear-gradient(180deg, #ffffff, #eef7ff);
+  border: 2px solid #9bc7f0;
+  box-shadow: 0 8px 18px rgba(30, 64, 175, .10);
+  cursor: pointer;
+  position: relative;
+  transition: .15s;
+}
+
+.seat.girl {
+  background: linear-gradient(180deg, #ffffff, #fff0f6);
+  border-color: #f3a6c4;
+  box-shadow: 0 8px 18px rgba(190, 24, 93, .10);
+}
+
+.seat:hover {
+  transform: translateY(-3px);
+}
+
+.seat.locked {
+  outline: 4px solid #111827;
+}
+
+.empty {
+  min-height: 86px;
+  border-radius: 18px;
+  border: 2px dashed #cbd5e1;
+  background: rgba(255,255,255,.35);
+}
+
+.no {
+  font-size: 12px;
+  font-weight: 800;
+  color: #64748b;
+}
+
+.kana {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.name {
+  margin-top: 7px;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.lock {
+  position: absolute;
+  right: 10px;
+  top: 8px;
+}
+
+.note {
+  margin-top: 18px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+@media print {
+  body {
+    background: white;
+    padding: 0;
+  }
+
+  .controls, .note {
+    display: none;
+  }
+
+  .classroom {
+    box-shadow: none;
+    border: none;
+  }
+}
+</style>
+</head>
+
+<body>
+<div class="app">
+  <div class="header">
+    <div>
+      <h1>404 席替えツール</h1>
+      <div class="sub">左上から右下へ、出席番号順で初期配置</div>
+    </div>
+
+    <div class="controls">
+      <button onclick="shuffleSeats()">席替えする</button>
+      <button class="secondary" onclick="resetSeats()">元に戻す</button>
+      <button class="secondary" onclick="window.print()">印刷</button>
+    </div>
+  </div>
+
+  <div class="classroom">
+    <div class="front">
+      <div class="desk">教卓</div>
+    </div>
+
+    <div id="grid" class="grid"></div>
+
+    <div class="note">席をクリックすると固定できます。固定席は席替えしても動きません。</div>
+  </div>
+</div>
+
+<script>
+const studentsOriginal = [
+  { no: 1, name: "天野 紗希", kana: "あまの さき", gender: "girl" },
+  { no: 2, name: "岩澤 爾七", kana: "いわさわ にな", gender: "girl" },
+  { no: 3, name: "岩舘 美桜", kana: "いわだて みお", gender: "girl" },
+  { no: 4, name: "大住 旬", kana: "おおすみ しゅん", gender: "boy" },
+  { no: 5, name: "大八木 桃実", kana: "おおやぎ もみ", gender: "girl" },
+  { no: 6, name: "大山 航平", kana: "おおやま こうへい", gender: "boy" },
+  { no: 7, name: "沖 愛佳", kana: "おき まなか", gender: "girl" },
+  { no: 8, name: "小野 遥", kana: "おの はるか", gender: "girl" },
+  { no: 9, name: "上條 優衣", kana: "かみじょう ゆい", gender: "girl" },
+  { no: 10, name: "川原 愛生", kana: "かわはら あい", gender: "girl" },
+  { no: 11, name: "黒川 晃世", kana: "くろかわ こうせい", gender: "boy" },
+  { no: 12, name: "郷地 翔大", kana: "ごうち しょうた", gender: "boy" },
+  { no: 13, name: "小島 朱莉", kana: "こじま あかり", gender: "girl" },
+  { no: 14, name: "小林 美海", kana: "こばやし みうみ", gender: "girl" },
+  { no: 15, name: "頃安 誠", kana: "ごろやす まこと", gender: "boy" },
+  { no: 16, name: "崔 紗会", kana: "さい さえ", gender: "girl" },
+  { no: 17, name: "佐子 凛夏", kana: "さこ りんか", gender: "girl" },
+  { no: 18, name: "鈴木 僚太", kana: "すずき りょうた", gender: "boy" },
+  { no: 19, name: "瀬戸 康太", kana: "せと こうた", gender: "boy" },
+  { no: 20, name: "高橋 直太", kana: "たかはし なおた", gender: "boy" },
+  { no: 21, name: "瀧澤 遼", kana: "たきざわ りょう", gender: "boy" },
+  { no: 22, name: "武田 頼景", kana: "たけだ よりかげ", gender: "boy" },
+  { no: 23, name: "田中 譲太郎", kana: "たなか じょうたろう", gender: "boy" },
+  { no: 24, name: "土蔵 創一", kana: "つちくら そういち", gender: "boy" },
+  { no: 25, name: "中尾 結衣子", kana: "なかお ゆいこ", gender: "girl" },
+  { no: 26, name: "中村 純羽", kana: "なかむら すみは", gender: "boy" },
+  { no: 27, name: "橋本 かれん", kana: "はしもと かれん", gender: "girl" },
+  { no: 28, name: "東 暖大", kana: "ひがし はると", gender: "boy" },
+  { no: 29, name: "平井 結芽", kana: "ひらい ゆめ", gender: "girl" },
+  { no: 30, name: "福島 創士", kana: "ふくしま そうし", gender: "boy" },
+  { no: 31, name: "藤井 千夏", kana: "ふじい ちなつ", gender: "girl" },
+  { no: 32, name: "古谷 太一", kana: "ふるや たいち", gender: "boy" },
+  { no: 33, name: "壬生 周太郎", kana: "みぶ しゅうたろう", gender: "boy" },
+  { no: 34, name: "宮田 花帆", kana: "みやた かほ", gender: "girl" },
+  { no: 35, name: "宮本 航希", kana: "みやもと こうき", gender: "boy" },
+  { no: 36, name: "柳川 大河", kana: "やながわ たいが", gender: "boy" },
+  { no: 37, name: "山崎 唯翔", kana: "やまざき ゆいと", gender: "boy" },
+  { no: 38, name: "横山 蓉", kana: "よこやま よう", gender: "boy" },
+  { no: 39, name: "吉田 芽生", kana: "よしだ めい", gender: "girl" }
+];
+
+const emptyPositions = new Set([
+  "0-0", // 左前
+  "0-6", // 右前
+  "5-0"  // 左後ろ
+]);
+
+let students = structuredClone(studentsOriginal);
+let locked = new Set();
+
+function getSeatPositions() {
+  const positions = [];
+
+  for (let row = 0; row < 6; row++) {
+    for (let col = 0; col < 7; col++) {
+      const key = `${row}-${col}`;
+      if (!emptyPositions.has(key)) {
+        positions.push(key);
+      }
+    }
+  }
+
+  return positions;
+}
+
+const seatPositions = getSeatPositions();
+
+function render() {
+  const grid = document.getElementById("grid");
+  grid.innerHTML = "";
+
+  let studentIndex = 0;
+
+  for (let row = 0; row < 6; row++) {
+    for (let col = 0; col < 7; col++) {
+      const key = `${row}-${col}`;
+
+      if (emptyPositions.has(key)) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        grid.appendChild(empty);
+        continue;
+      }
+
+      const s = students[studentIndex];
+      const index = studentIndex;
+
+      const seat = document.createElement("div");
+      seat.className = `seat ${s.gender}`;
+      if (locked.has(index)) seat.classList.add("locked");
+
+      seat.onclick = () => {
+        locked.has(index) ? locked.delete(index) : locked.add(index);
+        render();
+      };
+
+      seat.innerHTML = `
+        <div class="no">404-${s.no}</div>
+        <div class="kana">${s.kana}</div>
+        <div class="name">${s.name}</div>
+        <div class="lock">${locked.has(index) ? "🔒" : ""}</div>
+      `;
+
+      grid.appendChild(seat);
+      studentIndex++;
+    }
+  }
+}
+
+function shuffleArray(array) {
+  const a = [...array];
+
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+
+  return a;
+}
+
+function shuffleSeats() {
+  const movableIndexes = students
+    .map((_, i) => i)
+    .filter(i => !locked.has(i));
+
+  const movableStudents = movableIndexes.map(i => students[i]);
+  const shuffled = shuffleArray(movableStudents);
+
+  movableIndexes.forEach((index, i) => {
+    students[index] = shuffled[i];
+  });
+
+  render();
+}
+
+function resetSeats() {
+  students = structuredClone(studentsOriginal);
+  locked.clear();
+  render();
+}
+
+render();
+</script>
+</body>
+</html>
