@@ -351,6 +351,21 @@ function createSeatPositionsColumnFirst() {
 }
 
 const realSeatPositions = createSeatPositionsColumnFirst();
+const realSeatSet = new Set(realSeatPositions);
+
+function checkGenderMix(seatMap) {
+  for (const pos of realSeatPositions) {
+    const [row, col] = pos.split("-").map(Number);
+    const neighborGenders = [
+      `${row-1}-${col}`, `${row+1}-${col}`,
+      `${row}-${col-1}`, `${row}-${col+1}`,
+    ]
+      .filter(k => realSeatSet.has(k))
+      .map(k => seatMap[k].gender);
+    if (neighborGenders.length > 0 && new Set(neighborGenders).size === 1) return false;
+  }
+  return true;
+}
 
 function createInitialSeats() {
   const result = {};
@@ -424,11 +439,15 @@ async function shuffleSeats() {
 
   const movablePositions = realSeatPositions.filter(pos => !locked.has(pos));
   const movableStudents = movablePositions.map(pos => seats[pos]);
-  const shuffledStudents = shuffleArray(movableStudents);
 
-  movablePositions.forEach((pos, i) => {
-    seats[pos] = shuffledStudents[i];
-  });
+  let candidate = seats;
+  for (let attempt = 0; attempt < 2000; attempt++) {
+    const shuffled = shuffleArray(movableStudents);
+    candidate = { ...seats };
+    movablePositions.forEach((pos, i) => { candidate[pos] = shuffled[i]; });
+    if (checkGenderMix(candidate)) break;
+  }
+  seats = candidate;
 
   revealing = true;
   visibleSeats = new Set([...locked]);
