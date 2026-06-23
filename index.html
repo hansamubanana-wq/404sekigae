@@ -148,23 +148,45 @@ button:disabled {
 }
 
 .seat.hidden {
-  opacity: .18;
-  filter: blur(2px);
+  opacity: 0;
+  transform: scale(.7) rotateY(90deg);
+  pointer-events: none;
 }
 
 .seat.reveal {
-  animation: reveal .45s ease both;
+  animation: pop-in .5s cubic-bezier(.17,.67,.3,1.4) both;
 }
 
-@keyframes reveal {
-  from {
-    opacity: 0;
-    transform: scale(.78) translateY(16px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
+@keyframes pop-in {
+  from { opacity: 0; transform: scale(.6) rotateY(90deg); }
+  70%  { transform: scale(1.08) rotateY(-5deg); }
+  to   { opacity: 1; transform: scale(1) rotateY(0); }
+}
+
+.countdown-num {
+  display: block;
+  font-size: 56px;
+  line-height: 1.1;
+  animation: num-pop .6s cubic-bezier(.17,.67,.3,1.5) both;
+}
+
+@keyframes num-pop {
+  from { transform: scale(.2); opacity: 0; }
+  70%  { transform: scale(1.2); }
+  to   { transform: scale(1); opacity: 1; }
+}
+
+.confetti-piece {
+  position: fixed;
+  top: -14px;
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 9999;
+  animation: confetti-fall linear forwards;
+}
+
+@keyframes confetti-fall {
+  to { transform: translateY(110vh) rotate(800deg); opacity: 0; }
 }
 
 .seat:hover {
@@ -333,7 +355,7 @@ const cols = 7;
 let seats = createInitialSeats();
 let locked = new Set();
 let revealing = false;
-let visibleSeats = new Set();
+let justRevealed = false;
 
 function createSeatPositionsColumnFirst() {
   const positions = [];
@@ -399,11 +421,11 @@ function render() {
 
       seat.className = `seat ${s.gender}`;
       if (locked.has(key)) seat.classList.add("locked");
-      if (revealing && !visibleSeats.has(key)) seat.classList.add("hidden");
-      if (revealing && visibleSeats.has(key)) seat.classList.add("reveal");
+      if (revealing && !locked.has(key)) seat.classList.add("hidden");
+      if (justRevealed && !locked.has(key)) seat.classList.add("reveal");
 
       seat.onclick = () => {
-        if (revealing) return;
+        if (revealing || justRevealed) return;
         locked.has(key) ? locked.delete(key) : locked.add(key);
         render();
       };
@@ -432,7 +454,7 @@ function shuffleArray(array) {
 }
 
 async function shuffleSeats() {
-  if (revealing) return;
+  if (revealing || justRevealed) return;
 
   document.getElementById("shuffleBtn").disabled = true;
   document.getElementById("resetBtn").disabled = true;
@@ -450,54 +472,61 @@ async function shuffleSeats() {
   seats = candidate;
 
   revealing = true;
-  visibleSeats = new Set([...locked]);
-
-  document.getElementById("announcement").innerHTML =
-    `<small>席替え中</small>順番に発表します…`;
-
+  justRevealed = false;
   render();
 
-  const revealOrder = shuffleArray(movablePositions);
+  const ann = document.getElementById("announcement");
 
-  for (const pos of revealOrder) {
-    visibleSeats.add(pos);
-
-    const s = seats[pos];
-    const [row, col] = pos.split("-").map(Number);
-
-    document.getElementById("announcement").innerHTML = `
-      <small>${row + 1}列目・${col + 1}番</small>
-      404-${s.no}　${s.name}
-    `;
-
-    render();
-
-    await sleep(450);
+  for (const n of ["３", "２", "１"]) {
+    ann.innerHTML = `<small>席替え中…</small><span class="countdown-num">${n}</span>`;
+    await sleep(750);
   }
 
-  revealing = false;
-  visibleSeats.clear();
+  ann.innerHTML = `<small>発表！</small>🎊　新しい席が決まりました！　🎊`;
 
-  document.getElementById("announcement").innerHTML =
-    `<small>完了</small>席替え完了！`;
+  revealing = false;
+  justRevealed = true;
+  render();
+  launchConfetti();
+
+  await sleep(700);
+  justRevealed = false;
+  render();
 
   document.getElementById("shuffleBtn").disabled = false;
   document.getElementById("resetBtn").disabled = false;
-
-  render();
 }
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function launchConfetti() {
+  const colors = ['#2563eb', '#7c3aed', '#f43f5e', '#f59e0b', '#10b981', '#06b6d4', '#ec4899'];
+  for (let i = 0; i < 100; i++) {
+    const el = document.createElement('div');
+    el.className = 'confetti-piece';
+    const size = 7 + Math.random() * 8;
+    el.style.cssText = [
+      `left:${Math.random() * 100}vw`,
+      `background:${colors[i % colors.length]}`,
+      `width:${size}px`,
+      `height:${size}px`,
+      `animation-delay:${Math.random() * .5}s`,
+      `animation-duration:${1.2 + Math.random() * .9}s`,
+    ].join(';');
+    document.body.appendChild(el);
+    el.addEventListener('animationend', () => el.remove());
+  }
+}
+
 function resetSeats() {
-  if (revealing) return;
+  if (revealing || justRevealed) return;
 
   seats = createInitialSeats();
   locked.clear();
-  visibleSeats.clear();
   revealing = false;
+  justRevealed = false;
 
   document.getElementById("announcement").innerHTML =
     `<small>発表</small>席替えボタンを押してスタート`;
