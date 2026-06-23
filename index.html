@@ -333,18 +333,61 @@ function createSeatPositionsColumnFirst() {
 const realSeatPositions = createSeatPositionsColumnFirst();
 const realSeatSet = new Set(realSeatPositions);
 
-function checkGenderMix(seatMap) {
-  for (const pos of realSeatPositions) {
-    const [row, col] = pos.split("-").map(Number);
-    const neighborGenders = [
-      `${row-1}-${col}`, `${row+1}-${col}`,
-      `${row}-${col-1}`, `${row}-${col+1}`,
-    ]
-      .filter(k => realSeatSet.has(k))
-      .map(k => seatMap[k].gender);
-    if (neighborGenders.length > 0 && new Set(neighborGenders).size === 1) return false;
+// 各席の隣（上下左右）を事前計算
+const neighborsOf = {};
+for (const pos of realSeatPositions) {
+  const [row, col] = pos.split("-").map(Number);
+  neighborsOf[pos] = [
+    `${row-1}-${col}`, `${row+1}-${col}`,
+    `${row}-${col-1}`, `${row}-${col+1}`,
+  ].filter(k => realSeatSet.has(k));
+}
+
+// 周りが全員同性ならtrue（＝囲まれている）
+function isSurrounded(pos, seatMap) {
+  const ns = neighborsOf[pos];
+  if (ns.length === 0) return false;
+  const g = seatMap[ns[0]].gender;
+  for (let i = 1; i < ns.length; i++) {
+    if (seatMap[ns[i]].gender !== g) return false;
   }
   return true;
+}
+
+function violatingSeats(seatMap) {
+  return realSeatPositions.filter(pos => isSurrounded(pos, seatMap));
+}
+
+// ランダム配置→違反席の入れ替えで修復（局所探索）
+function arrangeSeats() {
+  const movable = realSeatPositions.filter(pos => !locked.has(pos));
+  const students = movable.map(pos => seats[pos]);
+  let best = { ...seats };
+  let bestScore = violatingSeats(best).length;
+
+  for (let restart = 0; restart < 300 && bestScore > 0; restart++) {
+    const cand = { ...seats };
+    const shuffled = shuffleArray(students);
+    movable.forEach((pos, i) => { cand[pos] = shuffled[i]; });
+
+    for (let step = 0; step < 400; step++) {
+      const bad = violatingSeats(cand).filter(p => !locked.has(p));
+      if (bad.length === 0) return cand;
+
+      // 違反席を、入れ替えで違反数が減る相手と交換（ダメなら撹拌）
+      const a = bad[Math.floor(Math.random() * bad.length)];
+      const before = violatingSeats(cand).length;
+      const b = movable[Math.floor(Math.random() * movable.length)];
+      [cand[a], cand[b]] = [cand[b], cand[a]];
+      if (violatingSeats(cand).length > before) {
+        [cand[a], cand[b]] = [cand[b], cand[a]]; // 悪化したら戻す
+      }
+    }
+
+    const score = violatingSeats(cand).length;
+    if (score < bestScore) { best = { ...cand }; bestScore = score; }
+  }
+  return best;
 }
 
 function createInitialSeats() {
@@ -444,17 +487,7 @@ async function shuffleSeats() {
   if (busy) return;
   setBusy(true);
 
-  const movablePositions = realSeatPositions.filter(pos => !locked.has(pos));
-  const movableStudents = movablePositions.map(pos => seats[pos]);
-
-  let candidate = seats;
-  for (let attempt = 0; attempt < 2000; attempt++) {
-    const shuffled = shuffleArray(movableStudents);
-    candidate = { ...seats };
-    movablePositions.forEach((pos, i) => { candidate[pos] = shuffled[i]; });
-    if (checkGenderMix(candidate)) break;
-  }
-  seats = candidate;
+  seats = arrangeSeats();
   render();
 
   const overlay = document.getElementById("overlay");
