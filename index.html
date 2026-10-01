@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
-<title>404 席替えツール</title>
+<title>古谷に捧げる席替え</title>
 
 <style>
 * { box-sizing: border-box; }
@@ -248,7 +248,7 @@ button:disabled {
 <body>
 <div class="app">
   <div class="header">
-    <h1>404 席替えツール</h1>
+    <h1>古谷に捧げる席替え</h1>
     <div class="controls">
       <button id="shuffleBtn" onclick="shuffleSeats()">席替えする</button>
       <button class="secondary" id="saveBtn" onclick="saveSeats()">保存</button>
@@ -300,7 +300,6 @@ const studentsOriginal = [
   { no: 29, name: "平井 結芽",   kana: "ひらい ゆめ",       gender: "girl" },
   { no: 30, name: "福島 創士",   kana: "ふくしま そうし",   gender: "boy"  },
   { no: 31, name: "藤井 千夏",   kana: "ふじい ちなつ",     gender: "girl" },
-  { no: 32, name: "古谷 太一",   kana: "ふるや たいち",     gender: "boy"  },
   { no: 33, name: "壬生 周太郎", kana: "みぶ しゅうたろう", gender: "boy"  },
   { no: 34, name: "宮田 花帆",   kana: "みやた かほ",       gender: "girl" },
   { no: 35, name: "宮本 航希",   kana: "みやもと こうき",   gender: "boy"  },
@@ -310,7 +309,7 @@ const studentsOriginal = [
   { no: 39, name: "吉田 芽生",   kana: "よしだ めい",       gender: "girl" },
 ];
 
-const emptyPositions = new Set(["0-0", "0-6", "5-0"]);
+const emptyPositions = new Set(["0-0", "0-6", "5-0", "3-5"]);
 const rows = 6;
 const cols = 7;
 
@@ -332,20 +331,6 @@ function createSeatPositionsColumnFirst() {
 
 const realSeatPositions = createSeatPositionsColumnFirst();
 const realSeatSet = new Set(realSeatPositions);
-
-function checkGenderMix(seatMap) {
-  for (const pos of realSeatPositions) {
-    const [row, col] = pos.split("-").map(Number);
-    const neighborGenders = [
-      `${row-1}-${col}`, `${row+1}-${col}`,
-      `${row}-${col-1}`, `${row}-${col+1}`,
-    ]
-      .filter(k => realSeatSet.has(k))
-      .map(k => seatMap[k].gender);
-    if (neighborGenders.length > 0 && new Set(neighborGenders).size === 1) return false;
-  }
-  return true;
-}
 
 function createInitialSeats() {
   const result = {};
@@ -447,13 +432,9 @@ async function shuffleSeats() {
   const movablePositions = realSeatPositions.filter(pos => !locked.has(pos));
   const movableStudents = movablePositions.map(pos => seats[pos]);
 
-  let candidate = seats;
-  for (let attempt = 0; attempt < 2000; attempt++) {
-    const shuffled = shuffleArray(movableStudents);
-    candidate = { ...seats };
-    movablePositions.forEach((pos, i) => { candidate[pos] = shuffled[i]; });
-    if (checkGenderMix(candidate)) break;
-  }
+  const shuffled = shuffleArray(movableStudents);
+  const candidate = { ...seats };
+  movablePositions.forEach((pos, i) => { candidate[pos] = shuffled[i]; });
   seats = candidate;
   render();
 
