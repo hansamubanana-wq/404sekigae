@@ -1,0 +1,329 @@
+:root {
+  --bg-0: #05060f;
+  --bg-1: #0b1030;
+  --ink: #f8fafc;
+  --muted: #94a3b8;
+  --boy: #38bdf8;
+  --girl: #f472b6;
+  --gold: #fbbf24;
+  --gold-2: #f59e0b;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  height: 100vh;
+  overflow: hidden;
+  font-family: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  color: var(--ink);
+  background:
+    radial-gradient(ellipse 60% 45% at 50% -5%, rgba(251, 191, 36, .18), transparent 70%),
+    radial-gradient(circle at 8% 90%, rgba(56, 189, 248, .16), transparent 35%),
+    radial-gradient(circle at 95% 80%, rgba(244, 114, 182, .16), transparent 35%),
+    linear-gradient(180deg, var(--bg-1), var(--bg-0));
+  padding: 14px 22px 18px;
+}
+
+/* 背景のきらめき */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(1.5px 1.5px at 12% 22%, rgba(255,255,255,.5), transparent),
+    radial-gradient(1px 1px at 33% 68%, rgba(255,255,255,.4), transparent),
+    radial-gradient(1.5px 1.5px at 72% 14%, rgba(255,255,255,.45), transparent),
+    radial-gradient(1px 1px at 88% 52%, rgba(255,255,255,.35), transparent),
+    radial-gradient(1px 1px at 56% 88%, rgba(255,255,255,.3), transparent);
+  animation: twinkle 4s ease-in-out infinite alternate;
+}
+@keyframes twinkle { from { opacity: .4; } to { opacity: 1; } }
+
+.app {
+  position: relative;
+  max-width: 1240px;
+  height: 100%;
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.status {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--muted);
+  letter-spacing: .08em;
+}
+.status b { color: var(--gold); font-size: 22px; margin: 0 4px; }
+
+.controls { display: flex; gap: 10px; flex-wrap: wrap; }
+
+button {
+  font-family: inherit;
+  border: 0;
+  padding: 11px 20px;
+  border-radius: 999px;
+  font-weight: 900;
+  font-size: 15px;
+  letter-spacing: .06em;
+  cursor: pointer;
+  color: #1c1405;
+  background: linear-gradient(135deg, #fde68a, var(--gold) 45%, var(--gold-2));
+  box-shadow: 0 0 0 1px rgba(251,191,36,.6), 0 0 24px rgba(251,191,36,.45);
+  transition: transform .15s, box-shadow .15s, opacity .15s;
+}
+button:hover { transform: translateY(-1px); box-shadow: 0 0 0 1px rgba(251,191,36,.8), 0 0 34px rgba(251,191,36,.65); }
+
+button.secondary {
+  color: var(--ink);
+  background: rgba(255,255,255,.05);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.22);
+}
+button.secondary:hover { background: rgba(255,255,255,.1); box-shadow: inset 0 0 0 1px rgba(255,255,255,.45); }
+
+button:disabled { opacity: .35; cursor: not-allowed; transform: none; }
+
+.classroom {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 18px 18px;
+  border-radius: 26px;
+  background: rgba(255,255,255,.025);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.07), 0 30px 80px rgba(0,0,0,.5);
+}
+
+.front { display: flex; justify-content: center; margin-bottom: 14px; }
+
+.desk {
+  width: 240px;
+  text-align: center;
+  padding: 8px;
+  border-radius: 12px;
+  color: var(--gold);
+  font-weight: 900;
+  font-size: 17px;
+  letter-spacing: .5em;
+  text-indent: .5em;
+  border: 2px solid var(--gold);
+  text-shadow: 0 0 10px rgba(251,191,36,.8);
+  box-shadow: 0 0 18px rgba(251,191,36,.45), inset 0 0 14px rgba(251,191,36,.25);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  grid-template-rows: repeat(6, 1fr);
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+}
+
+.seat {
+  --c: var(--boy);
+  min-height: 0;
+  border-radius: 16px;
+  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+  cursor: pointer;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--c) 14%, transparent), color-mix(in srgb, var(--c) 4%, transparent));
+  border: 1.5px solid var(--c);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--c) 35%, transparent), inset 0 0 12px color-mix(in srgb, var(--c) 12%, transparent);
+  transition: transform .18s, box-shadow .18s;
+}
+.seat.girl { --c: var(--girl); }
+.seat:hover { transform: translateY(-2px); box-shadow: 0 0 22px color-mix(in srgb, var(--c) 60%, transparent), inset 0 0 12px color-mix(in srgb, var(--c) 18%, transparent); }
+
+.seat.locked {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px var(--gold), 0 0 22px rgba(251,191,36,.5);
+}
+
+.seat.hidden {
+  border: 1.5px dashed rgba(255,255,255,.18);
+  background: rgba(255,255,255,.02);
+  box-shadow: none;
+  align-items: center;
+  cursor: default;
+}
+.seat.hidden::after {
+  content: "?";
+  font-size: 26px;
+  font-weight: 900;
+  color: rgba(255,255,255,.13);
+}
+.seat.hidden:hover { transform: none; }
+
+.seat.flash { animation: flash .9s ease-out both; }
+@keyframes flash {
+  0%   { transform: scale(1.25); filter: brightness(2.2); box-shadow: 0 0 60px var(--c); }
+  60%  { transform: scale(.97); }
+  100% { transform: scale(1); filter: brightness(1); }
+}
+
+.seat.decoy { animation: decoy-shake .5s ease-in-out infinite; border-style: solid; border-color: rgba(255,255,255,.5); }
+@keyframes decoy-shake { 0%,100% { transform: rotate(0); } 25% { transform: rotate(-3deg); } 75% { transform: rotate(3deg); } }
+
+.empty { min-height: 0; }
+
+.no   { font-size: 11px; font-weight: 800; color: color-mix(in srgb, var(--c) 80%, white); letter-spacing: .05em; }
+.kana { margin-top: 1px; font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+.name { margin-top: 2px; font-size: 16px; font-weight: 900; white-space: nowrap; }
+.lock { position: absolute; right: 8px; top: 6px; font-size: 13px; }
+
+/* ===== 発表ステージ ===== */
+.stage {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .35s ease;
+  background:
+    radial-gradient(ellipse 42% 38% at 50% 48%, rgba(251,191,36,.20), transparent 70%),
+    rgba(3, 4, 12, .78);
+}
+.stage.on { opacity: 1; }
+
+.flycard {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 60;
+  width: 560px;
+  padding: 26px 30px 30px;
+  border-radius: 30px;
+  text-align: center;
+  pointer-events: none;
+  --c: var(--boy);
+  background: linear-gradient(180deg, #141a3d, #0a0d24);
+  border: 3px solid var(--c);
+  box-shadow: 0 0 40px color-mix(in srgb, var(--c) 60%, transparent), inset 0 0 30px color-mix(in srgb, var(--c) 20%, transparent);
+  will-change: transform;
+}
+.flycard.girl { --c: var(--girl); }
+.flycard.neutral { --c: rgba(255,255,255,.6); }
+.fc-label { font-size: 20px; font-weight: 800; color: var(--gold); letter-spacing: .2em; min-height: 28px; }
+.fc-kana  { font-size: 22px; color: var(--muted); margin-top: 6px; min-height: 30px; }
+.fc-name  { font-size: 80px; font-weight: 900; line-height: 1.15; white-space: nowrap; text-shadow: 0 0 22px color-mix(in srgb, var(--c) 70%, transparent); }
+.flycard.spin .fc-name { filter: blur(1.5px); }
+.flycard.shake { animation: card-shake .35s ease-in-out 2; }
+@keyframes card-shake { 0%,100% { margin-left: 0; } 25% { margin-left: -14px; } 75% { margin-left: 14px; } }
+
+.bubble {
+  position: fixed;
+  left: 0; top: 0;
+  z-index: 70;
+  transform: translate(-50%, -100%);
+  padding: 10px 18px;
+  border-radius: 18px;
+  background: white;
+  color: #111827;
+  font-weight: 900;
+  font-size: 26px;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 10px 30px rgba(0,0,0,.4);
+  animation: bubble-in .3s cubic-bezier(.17,.67,.3,1.5) both;
+}
+.bubble::after {
+  content: "";
+  position: absolute;
+  left: 50%; bottom: -10px;
+  transform: translateX(-50%);
+  border: 10px solid transparent;
+  border-top-color: white;
+  border-bottom: 0;
+}
+@keyframes bubble-in { from { transform: translate(-50%, -100%) scale(.3); opacity: 0; } }
+
+.cat {
+  position: fixed;
+  left: 0; top: 0;
+  z-index: 65;
+  font-size: 96px;
+  line-height: 1;
+  pointer-events: none;
+  will-change: transform;
+}
+.cat span { display: inline-block; animation: cat-hop .22s ease-in-out infinite alternate; }
+@keyframes cat-hop { from { transform: translateY(0) rotate(-4deg); } to { transform: translateY(-14px) rotate(4deg); } }
+
+.banner {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  font-weight: 900;
+  text-align: center;
+}
+.banner .big {
+  font-size: 92px;
+  color: var(--gold);
+  text-shadow: 0 0 30px rgba(251,191,36,.8);
+  animation: num-pop .6s cubic-bezier(.17,.67,.3,1.5) both;
+}
+@keyframes num-pop {
+  from { transform: scale(.2); opacity: 0; }
+  70%  { transform: scale(1.15); }
+  to   { transform: scale(1); opacity: 1; }
+}
+
+/* 紙吹雪 */
+.confetti-piece {
+  position: fixed;
+  top: -14px;
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 200;
+  animation: confetti-fall linear forwards;
+}
+@keyframes confetti-fall { to { transform: translateY(110vh) rotate(800deg); opacity: 0; } }
+
+/* 印刷 */
+@media print {
+  html, body {
+    height: auto !important;
+    overflow: visible !important;
+    background: white !important;
+    color: #111827 !important;
+    padding: 8mm !important;
+  }
+  body::before { display: none; }
+  .app { display: block !important; height: auto !important; max-width: 100% !important; }
+  .header { display: none !important; }
+  .classroom { display: block !important; background: white !important; box-shadow: none !important; padding: 0 !important; }
+  .desk { color: #111827; border-color: #111827; box-shadow: none; text-shadow: none; }
+  .grid { display: grid !important; grid-template-rows: auto !important; height: auto !important; gap: 6px !important; }
+  .seat {
+    min-height: 52px !important;
+    background: white !important;
+    box-shadow: none !important;
+    break-inside: avoid;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .seat.locked { box-shadow: none !important; border-color: var(--c) !important; }
+  .kana { color: #64748b; }
+  .stage, .flycard, .bubble, .cat, .banner { display: none !important; }
+}
