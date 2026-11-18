@@ -1,0 +1,46 @@
+// 404 名簿
+const studentsOriginal = [
+  { no: 1,  name: "天野 紗希",   kana: "あまの さき",       gender: "girl" },
+  { no: 2,  name: "岩澤 爾七",   kana: "いわさわ にな",     gender: "girl" },
+  { no: 3,  name: "岩舘 美桜",   kana: "いわだて みお",     gender: "girl" },
+  { no: 4,  name: "大住 旬",     kana: "おおすみ しゅん",   gender: "boy"  },
+  { no: 5,  name: "大八木 桃実", kana: "おおやぎ もみ",     gender: "girl" },
+  { no: 6,  name: "大山 航平",   kana: "おおやま こうへい", gender: "boy"  },
+  { no: 7,  name: "沖 愛佳",     kana: "おき まなか",       gender: "girl" },
+  { no: 8,  name: "小野 遥",     kana: "おの はるか",       gender: "girl" },
+  { no: 9,  name: "上條 優衣",   kana: "かみじょう ゆい",   gender: "girl" },
+  { no: 10, name: "川原 愛生",   kana: "かわはら あい",     gender: "girl" },
+  { no: 11, name: "黒川 晃世",   kana: "くろかわ こうせい", gender: "boy"  },
+  { no: 12, name: "郷地 翔大",   kana: "ごうち しょうた",   gender: "boy"  },
+  { no: 13, name: "小島 朱莉",   kana: "こじま あかり",     gender: "girl" },
+  { no: 14, name: "小林 美海",   kana: "こばやし みうみ",   gender: "girl" },
+  { no: 15, name: "頃安 誠",     kana: "ごろやす まこと",   gender: "boy"  },
+  { no: 16, name: "崔 紗会",     kana: "さい さえ",         gender: "girl" },
+  { no: 17, name: "佐子 凛夏",   kana: "さこ りんか",       gender: "girl" },
+  { no: 18, name: "鈴木 僚太",   kana: "すずき りょうた",   gender: "boy"  },
+  { no: 19, name: "瀬戸 康太",   kana: "せと こうた",       gender: "boy"  },
+  { no: 20, name: "高橋 直太",   kana: "たかはし なおた",   gender: "boy"  },
+  { no: 21, name: "瀧澤 遼",     kana: "たきざわ りょう",   gender: "boy"  },
+  { no: 22, name: "武田 頼景",   kana: "たけだ よりかげ",   gender: "boy"  },
+  { no: 23, name: "田中 譲太郎", kana: "たなか じょうたろう", gender: "boy" },
+  { no: 24, name: "土蔵 創一",   kana: "つちくら そういち", gender: "boy"  },
+  { no: 25, name: "中尾 結衣子", kana: "なかお ゆいこ",     gender: "girl" },
+  { no: 26, name: "中村 純羽",   kana: "なかむら すみは",   gender: "boy"  },
+  { no: 27, name: "橋本 かれん", kana: "はしもと かれん",   gender: "girl" },
+  { no: 28, name: "東 暖大",     kana: "ひがし はると",     gender: "boy"  },
+  { no: 29, name: "平井 結芽",   kana: "ひらい ゆめ",       gender: "girl" },
+  { no: 30, name: "福島 創士",   kana: "ふくしま そうし",   gender: "boy"  },
+  { no: 31, name: "藤井 千夏",   kana: "ふじい ちなつ",     gender: "girl" },
+  { no: 33, name: "壬生 周太郎", kana: "みぶ しゅうたろう", gender: "boy"  },
+  { no: 34, name: "宮田 花帆",   kana: "みやた かほ",       gender: "girl" },
+  { no: 35, name: "宮本 航希",   kana: "みやもと こうき",   gender: "boy"  },
+  { no: 36, name: "柳川 大河",   kana: "やながわ たいが",   gender: "boy"  },
+  { no: 37, name: "山崎 唯翔",   kana: "やまざき ゆいと",   gender: "boy"  },
+  { no: 38, name: "横山 蓉",     kana: "よこやま よう",     gender: "boy"  },
+  { no: 39, name: "吉田 芽生",   kana: "よしだ めい",       gender: "girl" },
+];
+
+// 空き(席がない)マス。"行-列"、0始まり
+const emptyPositions = new Set(["0-0", "0-6", "5-0", "5-6"]);
+const rows = 6;
+const cols = 7;
