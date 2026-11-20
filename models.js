@@ -5,7 +5,8 @@
    どれも THREE.Group を返し、毎フレームの動きは userData.update(t) で行う
    ========================================================= */
 
-const stdMat = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: .5, ...o });
+// 明るすぎると光がにじんで白く飛ぶので、環境光の映り込みを控えめに
+const stdMat = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: .5, envMapIntensity: .55, ...o });
 
 function disposeGroup(g) {
   g.traverse(o => {
@@ -27,7 +28,7 @@ function stageActor(g) {
 function buildCat(color = 0xf2a541) {
   const g = new THREE.Group();
   const fur = stdMat(color, { roughness: .6 });
-  const white = stdMat(0xfff3e2, { roughness: .6 });
+  const white = stdMat(0xcfc6b8, { roughness: .7 });
   const dark = stdMat(0x111111, { roughness: .25 });
   const pink = stdMat(0xff8fb1, { roughness: .5 });
   const stripe = stdMat(new THREE.Color(color).multiplyScalar(.72).getHex(), { roughness: .6 });
@@ -35,9 +36,10 @@ function buildCat(color = 0xf2a541) {
   const body = new THREE.Mesh(new THREE.CapsuleGeometry(.2, .44, 6, 18), fur);
   body.rotation.z = Math.PI / 2;
   body.position.y = .42;
-  const belly = new THREE.Mesh(new THREE.CapsuleGeometry(.15, .32, 6, 14), white);
+  const belly = new THREE.Mesh(new THREE.CapsuleGeometry(.14, .22, 6, 14), white);
   belly.rotation.z = Math.PI / 2;
-  belly.position.set(0, .36, .07);
+  belly.scale.set(1, .9, .7);
+  belly.position.set(.03, .33, .06);
   g.add(body, belly);
   for (let i = 0; i < 3; i++) {
     const s = new THREE.Mesh(new THREE.TorusGeometry(.2, .025, 6, 20, Math.PI), stripe);
@@ -59,7 +61,7 @@ function buildCat(color = 0xf2a541) {
   for (const sx of [-1, 1]) {
     const eye = new THREE.Mesh(new THREE.SphereGeometry(.036, 12, 10), dark);
     eye.position.set(sx * .075, .035, .18);
-    const shine = new THREE.Mesh(new THREE.SphereGeometry(.012, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+    const shine = new THREE.Mesh(new THREE.SphereGeometry(.012, 8, 6), new THREE.MeshBasicMaterial({ color: 0xbbbbbb }));
     shine.position.set(sx * .075 + .012, .05, .213);
     const ear = new THREE.Mesh(new THREE.ConeGeometry(.08, .17, 4), fur);
     ear.position.set(sx * .12, .19, -.01);
@@ -180,12 +182,12 @@ function clockFace() {
 function buildClock() {
   const g = new THREE.Group();
   const red = stdMat(0xd7263d, { metalness: .5, roughness: .25 });
-  const gold = stdMat(0xf5c542, { metalness: 1, roughness: .25 });
+  const gold = stdMat(0xc99a2e, { metalness: 1, roughness: .35 });
   const body = new THREE.Mesh(new THREE.CylinderGeometry(.42, .42, .22, 48), red);
   body.rotation.x = Math.PI / 2;
   const bezel = new THREE.Mesh(new THREE.TorusGeometry(.4, .035, 12, 48), gold);
   bezel.position.z = .11;
-  const face = new THREE.Mesh(new THREE.CircleGeometry(.38, 48), new THREE.MeshStandardMaterial({ map: clockFace(), roughness: .4 }));
+  const face = new THREE.Mesh(new THREE.CircleGeometry(.38, 48), new THREE.MeshBasicMaterial({ map: clockFace(), color: new THREE.Color(.78, .78, .78) }));
   face.position.z = .112;
   g.add(body, bezel, face);
   const bells = [];
