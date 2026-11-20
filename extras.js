@@ -162,14 +162,22 @@ async function introGift(s) {
   bubble("パカッ！", v3(0, b, 0), 800);
   const l0 = lid.position.clone();
   tween(800, t => { lid.position.set(l0.x + t * b * 2, l0.y + Math.sin(t * Math.PI * .8) * b * 2.5, l0.z); lid.rotation.z = -t * 3; }, ease.out);
+  // 箱は下へ落ちて消え、カードは箱より手前から飛び出す (名前と箱が重ならないように)
   const c = card(), k = V.heroK;
-  c.position.set(0, -b * .3, 0);
+  const front = b * 1.6;
+  c.position.set(0, -b * .2, front);
   c.scale.setScalar(.01);
   c.visible = true;
-  burst(v3(0, 0, 0), [hdr(0xfbbf24, 3), hdr(0x2f8cff, 3), hdr(0xff4fb0, 3), hdr(0x34d399, 3), hdr(0xffffff, 3)], 260, 6, { life: 1.6, grav: 3 });
-  await tween(600, t => { c.position.y = lerp(-b * .3, 0, t); c.scale.setScalar(Math.max(.01, k * t)); }, ease.back);
-  const gy = g.position.y;
-  tween(600, t => { g.position.y = gy - t * V.visH; }, ease.in).then(() => V.stage.remove(g));
+  burst(v3(0, 0, front), [hdr(0xfbbf24, 3), hdr(0x2f8cff, 3), hdr(0xff4fb0, 3), hdr(0x34d399, 3), hdr(0xffffff, 3)], 260, 6, { life: 1.6, grav: 3 });
+  // 箱はその場でポンと縮んで消える。消えるまでカードは箱より手前
+  flashAt(v3(0, 0, b), hdr(0xffffff, 1.4), b * 4);
+  const boxGone = tween(260, t => g.scale.setScalar(Math.max(.01, 1 - t)), ease.in).then(() => V.stage.remove(g));
+  await tween(450, t => {
+    c.position.set(0, lerp(-b * .2, 0, t), front);
+    c.scale.setScalar(Math.max(.01, k * t));
+  }, ease.back);
+  await boxGone;
+  await tween(300, t => { c.position.z = lerp(front, 0, t); }, ease.out);
   await sleep(1200);
 }
 
@@ -499,7 +507,7 @@ function makeExtraCard(s, label) {
   const t = canvasTex(cv);
   const body = new THREE.Mesh(src.body.geometry, src.body.material.clone());
   const rim = new THREE.Mesh(src.rim.geometry, new THREE.MeshBasicMaterial({ color: hdr(HEX[s.gender], 1.7), transparent: true }));
-  rim.position.z = -.025;
+  rim.position.z = 0;   // 本体の厚みの内側に置く (裏から見たとき枠が全面を覆わないように)
   const front = new THREE.Mesh(src.front.geometry, new THREE.MeshBasicMaterial({ map: t, transparent: true, color: new THREE.Color(.84, .84, .84) }));
   front.position.z = .034;
   g.add(body, rim, front);
