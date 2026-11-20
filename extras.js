@@ -66,10 +66,11 @@ function caption(text, ms) {
 async function introMeteor(s) {
   const c = card(), k = V.heroK;
   const from = v3(V.visW * .8 * (Math.random() < .5 ? 1 : -1), V.visH * 1.1, -28);
-  c.visible = true;
   c.scale.setScalar(k);
+  c.position.copy(from);
   bubble("…なにか来る！", v3(0, V.visH * .3, 0), 1000);
   await sleep(500);
+  c.visible = true;
   await tween(1000, t => {
     c.position.lerpVectors(from, v3(), t);
     c.rotation.set(t * 4, t * 3, t * 6);
@@ -126,9 +127,9 @@ async function introWarp(s) {
 
 // プレゼント箱: 落ちてきて揺れて、ふたが飛んでカードが飛び出す
 async function introGift(s) {
-  const b = V.visH * .3;
+  const b = Math.min(V.visH * .17, V.visW * .12);
   const g = new THREE.Group();
-  const col = HEX[s.gender];
+  const col = pick([0x7c3aed, 0x10b981, 0xf59e0b, 0x06b6d4]);   // 性別が分からない色
   const boxMat = new THREE.MeshStandardMaterial({ color: col, roughness: .35, metalness: .2 });
   const ribMat = new THREE.MeshStandardMaterial({ color: 0xfbbf24, roughness: .3, metalness: .8, emissive: 0x553300, emissiveIntensity: .4 });
   const box = new THREE.Mesh(new V.RoundedBox(b * 1.3, b, b, 4, b * .05), boxMat);
@@ -162,6 +163,8 @@ async function introGift(s) {
   const l0 = lid.position.clone();
   tween(800, t => { lid.position.set(l0.x + t * b * 2, l0.y + Math.sin(t * Math.PI * .8) * b * 2.5, l0.z); lid.rotation.z = -t * 3; }, ease.out);
   const c = card(), k = V.heroK;
+  c.position.set(0, -b * .3, 0);
+  c.scale.setScalar(.01);
   c.visible = true;
   burst(v3(0, 0, 0), [hdr(0xfbbf24, 3), hdr(0x2f8cff, 3), hdr(0xff4fb0, 3), hdr(0x34d399, 3), hdr(0xffffff, 3)], 260, 6, { life: 1.6, grav: 3 });
   await tween(600, t => { c.position.y = lerp(-b * .3, 0, t); c.scale.setScalar(Math.max(.01, k * t)); }, ease.back);
@@ -197,9 +200,9 @@ async function introCurtain(s) {
   light.position.set(0, 2, 4);
   V.stage.add(L, Rr, val, light);
   const c = card(), k = V.heroK;
-  c.visible = true;
   c.scale.setScalar(k);
   await tween(500, t => { L.position.x = lerp(-W * .8, -W / 4, t); Rr.position.x = lerp(W * .8, W / 4, t); }, ease.out);
+  c.visible = true;   // 幕が閉じてから置く
   bubble("ドゥルルルル…", v3(0, V.visH * .25, 1.4), 1600);
   await tween(1700, t => { L.rotation.y = Math.sin(t * 40) * .01; }, ease.linear);
   bubble("ジャーン！", v3(0, V.visH * .25, 1.4), 900);
@@ -226,7 +229,7 @@ async function introShatter(s) {
     uniforms: { uColor: { value: new THREE.Color(.5, .8, 1.1) }, uOpacity: { value: 1 } },
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
   }));
-  const frost = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: 0xbfe6ff, transparent: true, opacity: .55, depthWrite: false }));
+  const frost = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: 0xbfe6ff, transparent: true, opacity: .9, depthWrite: false }));
   frost.position.z = .42;
   ice.add(shell, frost);
   V.stage.add(ice);
@@ -235,7 +238,7 @@ async function introShatter(s) {
   for (let i = 0; i < 2; i++) {
     await sleep(600);
     bubble(i ? "ピキピキッ" : "ピキッ", v3(rand(-1, 1), h * .55, .5), 700);
-    frost.material.opacity -= .15;
+    frost.material.opacity -= .2;
     await tween(260, t => { ice.position.x = Math.sin(t * Math.PI * 8) * .08; }, ease.linear);
   }
   await sleep(400);
