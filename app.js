@@ -218,6 +218,10 @@ function resetSeats() {
 
 /* ---------- 起動 ---------- */
 loadSeats();
+// ホーム画面に追加 (PWA) 用。オフラインでも開けるようにする
+if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+  addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+}
 addEventListener("DOMContentLoaded", () => {
   renderSheet();
   initWorld()
