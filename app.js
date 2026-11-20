@@ -80,6 +80,7 @@ function saveSeats() {
   try { localStorage.setItem("404seats", JSON.stringify(data)); } catch {}
   const btn = document.getElementById("saveBtn");
   btn.classList.add("done");
+  sfx("save");
   setTimeout(() => btn.classList.remove("done"), 1300);
 }
 
@@ -139,6 +140,7 @@ function renderSheet() {
 
 function onSeatTap(key) {
   if (busy) return;
+  sfx(locked.has(key) ? "switch" : "toggle", { vol: .8 });
   locked.has(key) ? locked.delete(key) : locked.add(key);
   if (worldReady) { seatLook(key); tapPulse(key); }
   renderSheet();
@@ -154,6 +156,7 @@ async function shuffleSeats() {
   movable.forEach((pos, i) => { seats[pos] = shuffled[i]; });
 
   if (!worldReady) { renderSheet(); return; }
+  sfx("click");
 
   setBusy(true);
   try {
@@ -209,6 +212,7 @@ async function shuffleSeats() {
 
 function resetSeats() {
   if (busy) return;
+  sfx("down", { vol: .7 });
   seats = createInitialSeats();
   locked.clear();
   hidden.clear();

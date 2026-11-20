@@ -112,6 +112,11 @@ button:disabled { opacity: 0; pointer-events: none; }
   stroke-linejoin: round;
   transition: opacity .2s, transform .2s;
 }
+#soundBtn .slash { display: none; }
+#soundBtn.muted .slash { display: inline; }
+#soundBtn.muted .wave { display: none; }
+#soundBtn.muted { opacity: .6; }
+#soundBtn:disabled { opacity: 1; pointer-events: auto; }
 .icon .check { position: absolute; opacity: 0; transform: scale(.5); color: #4ade80; }
 .icon.done svg:first-child { opacity: 0; }
 .icon.done .check { opacity: 1; transform: scale(1); }

@@ -33,6 +33,7 @@ function shockwave(key, color, size = 5) {
 // 着地の衝撃: 揺れ + 輪 + 周りの席が跳ねる
 function impact(key, s, power = 1) {
   shake(.35 * power);
+  sfx("boom", { vol: .8 * Math.min(1.2, power) }); sfx("metal", { vol: .5 });
   shockwave(key, hdr(HEX[s.gender], 2.5), 5 * power);
   const a = seatXZ(key);
   for (const k of realSeatPositions) {
@@ -71,6 +72,7 @@ async function introMeteor(s) {
   bubble("…なにか来る！", v3(0, V.visH * .3, 0), 1000);
   await sleep(500);
   c.visible = true;
+  sfx("windbig", { rate: 1.2 }); sfx("thruster", { vol: .5 });
   await tween(1000, t => {
     c.position.lerpVectors(from, v3(), t);
     c.rotation.set(t * 4, t * 3, t * 6);
@@ -78,6 +80,7 @@ async function introMeteor(s) {
   }, ease.in);
   c.rotation.set(0, 0, 0);
   shake(.5);
+  sfx("boom"); sfx("crunch", { vol: .7 });
   flashAt(v3(0, 0, .3), hdr(0xffb020, 2), 9);
   burst(v3(0, 0, .3), [hdr(0xffb020, 3), hdr(0xff5a1f, 3), hdr(HEX[s.gender], 3)], 260, 7, { life: 1.2 });
   bubble("ドーン！", v3(0, FACE_H * k * .75, 0), 900);
@@ -101,6 +104,7 @@ async function introWarp(s) {
   lines.frustumCulled = false;
   V.stage.add(lines);
   let speed = 10;
+  sfx("powerup", { rate: .7 }); sfx("ufo", { vol: .4, rate: 1.5 });
   const un = addFrameHook(dt => {
     for (let i = 0; i < N; i++) {
       const p = st[i];
@@ -117,6 +121,7 @@ async function introWarp(s) {
   c.scale.setScalar(k);
   await tween(450, t => { c.position.set(0, 0, lerp(-60, 0, t)); speed = 150 * (1 - t) + 5; }, ease.out);
   flashAt(v3(0, 0, .3), hdr(0x9fd8ff, 2), 8);
+  sfx("laser", { rate: .7 }); sfx("jingle_reveal", { vol: .8 });
   burst(v3(0, 0, .3), [hdr(0x9fd8ff, 3), hdr(HEX[s.gender], 3)], 160, 5);
   await tween(500, t => { lines.material.opacity = 1 - t; }, ease.out);
   un();
@@ -154,8 +159,10 @@ async function introGift(s) {
     return n * (t -= 2.625 / d) * t + .984375;
   });
   shake(.15);
+  sfx("wood");
   for (let i = 0; i < 3; i++) {
     await sleep(380);
+    sfx("wood", { vol: .5 + i * .2, rate: 1.1 });
     const a = .08 + i * .06;
     await tween(300, t => { g.rotation.z = Math.sin(t * Math.PI * 4) * a; g.position.y = -b * .2 + Math.abs(Math.sin(t * Math.PI * 2)) * a; }, ease.linear);
   }
@@ -171,6 +178,7 @@ async function introGift(s) {
   burst(v3(0, 0, front), [hdr(0xfbbf24, 3), hdr(0x2f8cff, 3), hdr(0xff4fb0, 3), hdr(0x34d399, 3), hdr(0xffffff, 3)], 260, 6, { life: 1.6, grav: 3 });
   // 箱はその場でポンと縮んで消える。消えるまでカードは箱より手前
   flashAt(v3(0, 0, b), hdr(0xffffff, 1.4), b * 4);
+  sfx("pop"); sfx("jingle_reveal", { vol: .8, delay: .1 });
   const boxGone = tween(260, t => g.scale.setScalar(Math.max(.01, 1 - t)), ease.in).then(() => V.stage.remove(g));
   await tween(450, t => {
     c.position.set(0, lerp(-b * .2, 0, t), front);
@@ -209,11 +217,13 @@ async function introCurtain(s) {
   V.stage.add(L, Rr, val, light);
   const c = card(), k = V.heroK;
   c.scale.setScalar(k);
+  sfx("cloth"); sfx("cloth", { delay: .1 });
   await tween(500, t => { L.position.x = lerp(-W * .8, -W / 4, t); Rr.position.x = lerp(W * .8, W / 4, t); }, ease.out);
   c.visible = true;   // 幕が閉じてから置く
   bubble("ドゥルルルル…", v3(0, V.visH * .25, 1.4), 1600);
   await tween(1700, t => { L.rotation.y = Math.sin(t * 40) * .01; }, ease.linear);
   bubble("ジャーン！", v3(0, V.visH * .25, 1.4), 900);
+  sfx("cloth"); sfx("cloth", { delay: .15 });
   await tween(900, t => {
     L.position.x = lerp(-W / 4, -W * .75, t); Rr.position.x = lerp(W / 4, W * .75, t);
     L.scale.x = Rr.scale.x = 1 - t * .5;
@@ -252,6 +262,7 @@ async function introShatter(s) {
   await sleep(400);
   V.stage.remove(ice);
   shake(.25);
+  sfx("shatter"); sfx("crack", { rate: .8 });
   flashAt(v3(0, 0, .5), hdr(0xbfe6ff, 2), 7);
   const shards = [];
   const sg = new THREE.TetrahedronGeometry(.22);
@@ -292,6 +303,7 @@ async function introCountdown(s) {
   c.visible = true;
   await tween(380, t => { c.position.set(0, 0, lerp(STAGE_D - .5, 0, t)); c.scale.setScalar(k); c.rotation.z = (1 - t) * .5; }, ease.in);
   shake(.45);
+  sfx("slam"); sfx("boom", { vol: .6 }); sfx("jingle_reveal", { vol: .8, delay: .15 });
   flashAt(v3(0, 0, .3), hdr(0xffffff, 1.5), 9);
   burst(v3(0, 0, .3), [hdr(HEX.gold, 3), hdr(HEX[s.gender], 3), hdr(0xffffff, 3)], 220, 6);
   await tween(400, t => c.scale.setScalar(k * (1 + (1 - t) * .15)), ease.out);
@@ -311,6 +323,7 @@ async function introSearch(s) {
   await veil(true, 300);
   c.visible = true;
   c.scale.setScalar(k);
+  sfx("powerup");
   await tween(900, t => { c.position.y = lerp(-V.visH * .8, 0, t); c.rotation.y = (1 - t) * Math.PI * 3; }, ease.out);
   c.rotation.set(0, 0, 0);
   burst(v3(0, 0, .3), [hdr(HEX.gold, 3), hdr(HEX[s.gender], 3)], 180, 4.5);
@@ -331,6 +344,7 @@ async function introGlitch(s, label, pool) {
     c.position.x = rand(-.25, .25);
     c.scale.set(k * rand(.9, 1.15), k * rand(.85, 1.1), k);
     c.rotation.z = rand(-.05, .05);
+    sfx("glitch", { vol: .6, vary: .3 });
     await sleep(rand(50, 110));
   }
   drawHero(pick(others), { label });
@@ -341,6 +355,7 @@ async function introGlitch(s, label, pool) {
   drawHero(s, { label });
   await tween(450, t => { c.scale.set(k, k * Math.max(.03, t), k); }, ease.back);
   burst(v3(0, 0, .3), [hdr(HEX[s.gender], 3), hdr(0xffffff, 2.5)], 130, 4);
+  sfx("jingle_reveal", { vol: .8 });
   await sleep(1100);
 }
 
@@ -437,6 +452,7 @@ async function flyTeleport(s, key) {
   dolly(.2, key, 800);
   await sleep(500);
   const p2 = pillar(P, 6);
+  sfx("beam"); sfx("phase", { rate: .8, delay: .2 });
   await tween(350, t => { p2.scale.x = t * 1.8; }, ease.out);
   c.visible = true;
   c.position.copy(P);
@@ -484,6 +500,7 @@ async function flySpiral(s, key) {
     return v3(C.x + Math.cos(a) * r, lerp(4.2, S.y, t) + Math.sin(t * Math.PI * 3) * .6 * (1 - t), C.z + Math.sin(a) * r);
   };
   const o0 = V.camOffset.clone();
+  for (let i = 0; i < 4; i++) sfx("whoosh", { delay: i * .8 / TIME_SCALE, vol: .7, vary: .2 });
   await tween(3400, t => {
     let w = wp(t);
     if (t < .15) w = start.clone().lerp(w, t / .15);
@@ -571,6 +588,7 @@ async function speedRound(list, startIdx) {
     c.rotation.set(0, 0, 0);
     land(s, key, "pop");
     shake(.12);
+    sfx("slam", { vol: .5 });
     await sleep(250);
   }
   V.spotSpeed = 1;
@@ -607,7 +625,8 @@ async function cutBlackout() {
   V.scene.remove(flash);
   u.uFocus.value.w = 0;
   u.uFocusCol.value.copy(fc);
-  for (let i = 0; i < 3; i++) { setPlateDim(1); V.spotPower = 1; await sleep(90); setPlateDim(.1); V.spotPower = 0; await sleep(120); }
+  for (let i = 0; i < 3; i++) { sfx("switch", { vol: .5 }); setPlateDim(1); V.spotPower = 1; await sleep(90); setPlateDim(.1); V.spotPower = 0; await sleep(120); }
+  sfx("powerup", { vol: .6 });
   setPlateDim(1); V.spotPower = 1;
   shake(.1);
   await sleep(800);
@@ -616,6 +635,7 @@ async function cutBlackout() {
 async function cutTour() {
   letterbox(true);
   const cap = caption("― ただいまの教室 ―", 4600);
+  sfx("jingle_mode"); sfx("windbig", { vol: .5, rate: .7, delay: .5 });
   await sleep(400);
   const C = V.lookTarget.clone();
   const H = V.homePos.clone();
@@ -656,6 +676,7 @@ async function cutCats() {
     c.position.set(-W / 2 - 2 - i * 1.4, -H * .3 + rand(-.4, .6), rand(-3, 0));
     cats.push(c);
   }
+  for (let i = 0; i < 22; i++) sfx("step", { vol: .45, delay: i * .15 / TIME_SCALE, rate: 1.5, vary: .3 });
   bubble("ニャー", v3(-W * .3, 0, 0), 1000);
   const un = addFrameHook((dt, t) => cats.forEach((c, i) => {
     c.position.x += dt * (W + 8) / 3.2;
@@ -676,6 +697,7 @@ async function cutUfoFleet() {
   const ufos = [0, 1, 2].map(() => { const u = buildUfo(); V.stage.add(u.g); return u; });
   const off = [v3(0, 0, 0), v3(-1.6, .5, -1.5), v3(1.6, .5, -1.5)];
   bubble("！？", v3(0, H * .3, 0), 800);
+  const hum = sfx("ufo", { loop: true, vol: .6, rate: .8 });
   let beamOn = false;
   await tween(4200, t => {
     const x = lerp(-W * .8 - 3, W * .8 + 3, t);
@@ -689,6 +711,7 @@ async function cutUfoFleet() {
       }
     });
   }, ease.linear);
+  if (hum) hum.stop(.6);
   ufos.forEach(u => { u.unhook(); V.stage.remove(u.g); });
   bubble("…なんだったんだ", v3(0, H * .2, 0), 1200);
   await sleep(1300);
@@ -716,6 +739,7 @@ async function cutTension() {
   banner("ラスト3人…", 2600, "alert");
   for (let b = 0; b < 3; b++) {
     shake(.06);
+    sfx("heart", { vol: 1, rate: .7 }); sfx("heart", { vol: .7, rate: .7, delay: .18 });
     await Promise.all(realSeatPositions.map(k => tween(240, t => V.seat[k].pivot.scale.setScalar(1 + Math.sin(t * Math.PI) * .07), ease.out)));
     await sleep(500);
   }

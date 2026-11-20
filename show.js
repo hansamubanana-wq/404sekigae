@@ -6,7 +6,21 @@
    ========================================================= */
 
 /* ---------- 小道具 ---------- */
+// 吹き出しの文字に合わせて鳴らす音
+const BUBBLE_SFX = {
+  "…じゃなくて": "wrong", "…ではなく！": "wrong", "いや、ちがう！": "wrong", "ここ…？": "question",
+  "あれ？": "question", "！？": "question", "…なんで猫？": "question", "…なんだったんだ": "question",
+  "ニャッ": "pop", "ニャー": "pop", "ニャニャ": "pop", "ドロン": "pop",
+  "ビュオォォ！": "windbig", "…ヒュ～": "windbig", "行きすぎ！": "whoosh", "やばっ": "whoosh",
+  "分身の術！": "phase", "シュン！": "phase", "どれが本物？": "suspense", "本物はこっち！": "chime",
+  "そろ〜り": "step", "ジリリリリ！": "bell", "パカッ！": "boxopen", "ドゥルルルル…": "suspense",
+  "ジャーン！": "gong", "ピキッ": "crack", "ピキピキッ": "crack", "ザザッ…": "glitch",
+  "…チャンネル調整中": "zap", "どこだ…？": "suspense", "発射！": "thruster", "…なにか来る！": "suspense",
+  "ボヨン": "boing", "ぽよん": "boing", "ボイン": "boing", "停電！？": "down", "…あ、ついた": "switch",
+};
+
 function bubble(text, local, ms = 1100) {
+  if (BUBBLE_SFX[text]) sfx(BUBBLE_SFX[text], { pan: panOf(local), vary: .06 });
   const p = toScreen(local);
   const el = document.createElement("div");
   el.className = "bubble";
@@ -17,7 +31,12 @@ function bubble(text, local, ms = 1100) {
   setTimeout(() => el.remove(), ms / TIME_SCALE);
 }
 
+const BANNER_SFX = { kickoff: "jingle_start", mode: "jingle_mode", speed: "jingle_speed", alert: "jingle_last" };
 async function banner(text, ms, cls = "") {
+  if (text === "折り返し地点！") sfx("jingle_half");
+  else if (cls === "count") { sfx("heart", { vol: 1 }); sfx("tick", { vol: .7 }); }
+  else if (cls === "finale") { sfx("fanfare", { vol: .9 }); sfx("applause", { vol: .55, delay: .4 }); }
+  else if (BANNER_SFX[cls.split(" ").pop()]) sfx(BANNER_SFX[cls.split(" ").pop()]);
   const el = document.createElement("div");
   el.className = `banner ${cls}`;
   el.innerHTML = `<div class="big">${text}</div>`;
@@ -111,6 +130,7 @@ async function introParticles(s, label, from = "galaxy", at = null) {
   P.u.uSwirl.value = from === "galaxy" ? 5 : 2;
   P.pts.visible = true;
   card().visible = false;
+  sfx("magic", { vol: .8 });
 
   await tween(from === "galaxy" ? 2000 : 1300, t => { P.u.uForm.value = t; }, ease.linear);
   // 粒の名前 → 本物のカードへ
@@ -118,6 +138,7 @@ async function introParticles(s, label, from = "galaxy", at = null) {
   c.visible = true;
   setCardOpacity(0);
   burst(v3(0, 0, .3), [hdr(HEX[s.gender], 3), hdr(0xffffff, 3)], 160, 4, { life: .9 });
+  sfx("jingle_reveal", { vol: .8 });
   await tween(600, t => { setCardOpacity(t); P.u.uFade.value = 1 - t; }, ease.out);
   P.pts.visible = false;
   await sleep(1100);
@@ -154,8 +175,10 @@ async function introDrum(s, label, pool) {
   const spinPool = [s, ...pool];
   const nTotal = 3 * K + Math.floor(Math.random() * K);
   const iEnd = nTotal % K;
-  let phi = 0;
+  let phi = 0, lastStep = 0;
   const shade = () => {
+    const st = Math.floor(phi / step);
+    if (st !== lastStep) { lastStep = st; sfx("tick", { vol: .7, vary: .1 }); }
     for (const p of panels) {
       const a = p.th - phi;
       const c = Math.cos(a);
@@ -183,6 +206,7 @@ async function introDrum(s, label, pool) {
   const p0 = phi;
   await tween(520, t => { phi = p0 + step * t; drum.rotation.x = phi; }, ease.back);
   burst(v3(0, 0, .4), [hdr(HEX[s.gender], 3), hdr(HEX.gold, 3)], 140, 4);
+  sfx("stop"); sfx("jingle_reveal", { vol: .8 });
   unhook();
 
   // ドラム → カードへ入れ替え
@@ -207,7 +231,9 @@ async function introFlip(s) {
   await sleep(900);
   bubble("あれ？", v3(0, FACE_H * k * .7, 0), 900);
   await sleep(700);
+  sfx("whoosh", { rate: .8 });
   await tween(900, t => { c.rotation.z = Math.PI * (1 + t); c.rotation.x = Math.sin(t * Math.PI) * .6; }, ease.back);
+  sfx("chime");
   c.rotation.set(0, 0, 0);
   burst(v3(0, 0, .3), hdr(HEX[s.gender], 3), 90, 3);
   await sleep(1000);
@@ -287,8 +313,10 @@ async function introLottery(s, label) {
   const unhook = addFrameHook(physics);
 
   await tween(500, t => g.scale.setScalar(Math.max(.01, t)), ease.back);
+  const rattle = sfx("dice", { loop: true, vol: .9 });
   await tween(300, t => { stir = t; }, ease.linear);
   await sleep(2100);
+  if (rattle) rattle.stop(.4);
   await tween(500, t => { stir = 1 - t; }, ease.linear);
 
   // 当たりのボールが上の穴から飛び出す
@@ -300,6 +328,7 @@ async function introLottery(s, label) {
     M.makeTranslation(win.x, win.y, win.z); balls.setMatrixAt(0, M); balls.instanceMatrix.needsUpdate = true;
   }, ease.inOut);
   burst(v3(0, R, 0), hdr(HEX.gold, 3), 60, 2.5, { life: .6 });
+  sfx("boing", { rate: 1.2 });
   const w1 = win.clone();
   await tween(600, t => {
     win.copy(bez(w1, v3(0, R + 1, .6), v3(0, .1, 1.4), t));
@@ -311,6 +340,7 @@ async function introLottery(s, label) {
 
   // ボールがはじけて、粒が名前になる
   flashAt(win.clone(), hdr(HEX[s.gender], 2.5), 3);
+  sfx("bang", { vol: .7 });
   burst(win.clone(), [hdr(HEX[s.gender], 3), hdr(0xffffff, 3)], 200, 5);
   const at = win.clone();
   tween(400, t => { g.scale.setScalar(1 - t * .99); }, ease.in).then(() => {
@@ -331,6 +361,7 @@ async function flyArc(s, key) {
   const side = P.x > 0 ? 1 : -1;
   const ctrl = p0.clone().lerp(P, .4).add(v3(side * .8, 2.4, 1.2));
   dolly(.18, key, 1100);
+  sfx("whoosh", { pan: P.x / V.visW });
   await tween(1100, t => {
     c.position.copy(bez(p0, ctrl, P, t));
     c.scale.setScalar(lerp(s0, 1, t));
@@ -349,6 +380,7 @@ async function flyStream(s, key) {
   Pt.u.uForm.value = 1; Pt.u.uStream.value = 0; Pt.u.uFade.value = 1;
   Pt.pts.visible = true;
   flashAt(c.position.clone(), hdr(HEX[s.gender], 1.5), 4);
+  sfx("magic", { vol: .7, rate: 1.15 });
   c.visible = false;
   Pt.u.uDest.value.copy(P);
   Pt.u.uCtrl.value.copy(c.position.clone().lerp(P, .5).add(v3(0, 2.5, 1)));
@@ -416,6 +448,7 @@ async function flyCat(s, key) {
   const run = (to, ms) => {
     const a = cat.position.clone();
     flip = to.x > a.x ? -1 : 1;
+    for (let i = 0; i < ms / 140; i++) sfx("step", { vol: .5, delay: i * .14 / TIME_SCALE, rate: 1.4, vary: .2 });
     return tween(ms, t => {
       cat.position.lerpVectors(a, to, t);
       cat.position.y += Math.abs(Math.sin(t * Math.PI * 6)) * .25;
@@ -463,11 +496,13 @@ async function flyUfo(s, key) {
   await tween(700, t => { c.position.lerpVectors(p0, spot, t); c.scale.setScalar(lerp(s0, V.heroK * .45, t)); }, ease.out);
 
   ufo.g.position.set(spot.x, H / 2 + 2, 0);
+  const hum = sfx("ufo", { loop: true, vol: .55 });
   bubble("！？", spot.clone().add(v3(0, .8, 0)), 900);
   const top = spot.clone().add(v3(0, 2.6, 0));
   await tween(1000, t => ufo.g.position.lerpVectors(v3(spot.x, H / 2 + 2, 0), top, t), ease.out);
 
   ufo.beam.visible = true;
+  sfx("beam");
   const beamTo = target => { const len = ufo.g.position.y - target.y; ufo.beam.scale.set(.9, Math.max(.01, len), .9); };
   beamTo(c.position);
   await tween(300, t => { ufo.beam.material.uniforms.uOpacity.value = t * .9; }, ease.out);
@@ -492,6 +527,7 @@ async function flyUfo(s, key) {
   c.rotation.set(0, 0, 0);
   c.position.copy(above).add(v3(0, -.2, 0));
   ufo.beam.visible = true;
+  sfx("beam");
   const start = c.position.clone();
   await tween(1000, t => {
     c.position.lerpVectors(start, P, t);
@@ -501,7 +537,7 @@ async function flyUfo(s, key) {
   await tween(250, t => { ufo.beam.material.uniforms.uOpacity.value = .9 * (1 - t); }, ease.linear);
   const u1 = ufo.g.position.clone();
   tween(900, t => { ufo.g.position.copy(u1).add(v3(t * 2, t * (H + 4), 0)); ufo.g.rotation.z = -t * .5; }, ease.in)
-    .then(() => { ufo.unhook(); V.stage.remove(ufo.g); });
+    .then(() => { ufo.unhook(); V.stage.remove(ufo.g); if (hum) hum.stop(.5); });
 }
 
 function buildUfo() {
@@ -705,6 +741,8 @@ async function land(s, key, style = "pop") {
   flashAt(P, hdr(HEX[s.gender], 1.6), 3.2);
   burst(P, [hdr(HEX[s.gender], 3), hdr(HEX.gold, 3), hdr(0xffffff, 2.5)], 150, 3.2, { life: 1 });
   floorFocus(key, true).then(() => floorFocus(key, false));
+  sfx("land", { pan: P.x / V.visW });
+  sfx("chime", { vol: .8, delay: .05 });
   o.strip.material.color.copy(col.clone().multiplyScalar(6));
   tween(900, t => o.strip.material.color.copy(col.clone().multiplyScalar(lerp(6, 2.4, t))), ease.out);
   updateStatus();
@@ -742,6 +780,7 @@ async function introPlain(s) {
   c.visible = true;
   c.scale.setScalar(.01);
   burst(v3(0, 0, .2), [hdr(HEX[s.gender], 3), hdr(HEX.gold, 3)], 120, 4);
+  sfx("whoosh"); sfx("pop", { delay: .25 });
   await tween(600, t => { c.scale.setScalar(Math.max(.01, k * t)); c.rotation.y = (1 - t) * Math.PI * 2; }, ease.back);
   c.rotation.y = 0;
   await sleep(1400);
@@ -846,6 +885,7 @@ async function firework(pal) {
     burst(p, trail, 2, .3, { life: .45, size: .09, grav: 1 });
   }, ease.out);
   const cols = pal.map(c => hdr(c, 3.2));
+  sfx("firework", { vol: .7, pan: to.x / V.visW, vary: .1 });
   burst(to, cols, 260, 5.5 * scale, { life: 1.6, size: .13 * scale, grav: 1.5, even: true });
   flashAt(to, hdr(pal[0], 1.2), 6 * scale);
 }

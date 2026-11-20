@@ -1,0 +1,16 @@
+効果音の素材 (すべて CC0 / パブリックドメイン)
+OpenGameArt.org より
+
+- Kenney「Interface Sounds」「Casino Audio」「Sci-fi Sounds」「Digital Audio」「RPG Audio」「Music Jingles」
+  https://opengameart.org/content/interface-sounds ほか (kenney.nl)
+- 「51 UI sound effects」 https://opengameart.org/content/51-ui-sound-effects-buttons-switches-and-clicks
+- 「100 CC0 SFX」 https://opengameart.org/content/100-cc0-sfx
+- 「25 CC0 bang / firework SFX」 https://opengameart.org/content/25-cc0-bang-firework-sfx
+- 「Swishes Sound Pack」 https://opengameart.org/content/swishes-sound-pack
+- 「Magic Spell SFX」 https://opengameart.org/content/magic-spell-sfx
+- 「Air Whoosh」 https://opengameart.org/content/air-whoosh
+- 「Hyper Ultra Fanfare」 https://opengameart.org/content/hyper-ultra-fanfare
+- 「Win Jingle」 https://opengameart.org/content/win-jingle
+- 「Applause in a large hall or church」 https://opengameart.org/content/applause-in-a-large-hall-or-church
+
+音量の正規化・無音の削除・長さの調整をして mp3 に変換しています。
