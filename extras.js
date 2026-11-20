@@ -518,8 +518,8 @@ async function announceDouble(A, B, idx) {
   const pair = [A, B];
   await banner("2人同時発表！", 1300, "mode");
   veil(true, 400);
-  const k = V.heroK * .82;
-  const gap = Math.min(V.visW * .25, FACE_W * k * .56);
+  const k = Math.min(V.heroK * .7, V.visW * .4 / FACE_W);
+  const gap = FACE_W * k * .56;
   const cards = pair.map(p => makeExtraCard(p.s, label));
   cards.forEach((g, i) => { g.position.set(i ? gap : -gap, i ? -.15 : .15, 0); g.scale.setScalar(.01); g.rotation.z = i ? .05 : -.05; });
   for (let i = 0; i < 2; i++) {
