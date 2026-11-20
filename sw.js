@@ -1,9 +1,9 @@
 // オフラインでも開けるようにするキャッシュ
 // ・このサイトのファイル: ネットを優先 (更新がすぐ反映される)。つながらないときはキャッシュ
 // ・three.js やフォントなど外部のファイル: キャッシュを優先
-const CACHE = "sekigae-v2";
+const CACHE = "sekigae-v3";
 const CORE = [
-  "./", "index.html", "style.css", "students.js", "sound.js", "app.js", "world.js", "extras.js", "show.js",
+  "./", "index.html", "style.css", "students.js", "sound.js", "app.js", "world.js", "models.js", "extras.js", "show.js",
   "sounds/_list.json", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png",
 ];
 

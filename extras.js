@@ -3,11 +3,6 @@
    追加の演出 / カットシーン / 進行表
    ========================================================= */
 
-const tex = name => {
-  const map = { rocket: "🚀", gift: "🎁" };
-  if (!V.tex[name]) V.tex[name] = canvasTex(emojiCanvas(map[name]));
-  return V.tex[name];
-};
 
 function randInt(a, b) { return Math.floor(rand(a, b + 1)); }
 
@@ -367,7 +362,10 @@ async function introGlitch(s, label, pool) {
 async function flyRocket(s, key) {
   const c = card(), P = plateLocal(key);
   const W = V.visW, H = V.visH;
-  const rk = emojiSprite(tex("rocket"), 1.3);
+  const rk = stageActor(buildRocket());
+  rk.scale.setScalar(1.05);
+  rk.position.set(0, -V.visH, 0);
+  const UP = v3(0, 1, 0);
   const p0 = c.position.clone(), s0 = c.scale.x, sm = V.heroK * .45;
   bubble("発射！", v3(0, H * .3, 0), 800);
   await tween(400, t => c.scale.setScalar(lerp(s0, sm, t)), ease.out);
@@ -387,17 +385,16 @@ async function flyRocket(s, key) {
     c.position.copy(p);
     c.scale.setScalar(t > .7 ? lerp(sm, 1, (t - .7) / .3) : sm);
     if (d.lengthSq() > 1e-8) {
+      const dir = d.clone().normalize();
       const ang = Math.atan2(d.y, d.x);
-      rk.material.rotation = ang - Math.PI / 4;
       c.rotation.z = Math.max(-.6, Math.min(.6, ang * .15));
-      const back = d.clone().normalize().multiplyScalar(-.9 * c.scale.x / sm * .5);
-      rk.position.copy(p).add(back).add(v3(0, -.15, .1));
-      fireTrail(rk.position.clone().add(back), 5);
+      rk.quaternion.slerp(new THREE.Quaternion().setFromUnitVectors(UP, dir), .35);
+      rk.position.copy(p).addScaledVector(dir, -(FACE_H * c.scale.x * .5 + .55)).add(v3(0, 0, -.2));
+      fireTrail(rk.position.clone().addScaledVector(dir, -.95), 5);
     }
   }, ease.inOut);
   c.rotation.set(0, 0, 0);
-  V.stage.remove(rk);
-  rk.material.dispose();
+  rk.userData.remove();
   impact(key, s, 1);
 }
 
@@ -570,7 +567,7 @@ async function announceDouble(A, B, idx) {
 }
 
 async function speedRound(list, startIdx) {
-  await banner("⚡ 高速モード ⚡", 1200, "mode speed");
+  await banner("高速モード", 1200, "mode speed");
   V.spotSpeed = 4;
   for (let i = 0; i < list.length; i++) {
     const { s, key } = list[i];
@@ -671,17 +668,17 @@ async function cutCats() {
   const W = V.visW, H = V.visH;
   const cats = [];
   const n = 6;
+  const furs = [0xf2a541, 0x9aa3ad, 0x3a3a3a, 0xf6efe4, 0xc9793a, 0xf2a541];
   for (let i = 0; i < n; i++) {
-    const c = emojiSprite(V.tex.cat, rand(.9, 1.6));
-    c.position.set(-W / 2 - 2 - i * 1.4, -H * .3 + rand(-.4, .6), rand(-3, 0));
+    const c = stageActor(buildCat(furs[i]));
+    c.scale.setScalar(rand(.9, 1.4));
+    c.position.set(-W / 2 - 2 - i * 1.5, -H * .42 + rand(-.2, .4), rand(-3, 0));
     cats.push(c);
   }
   for (let i = 0; i < 22; i++) sfx("step", { vol: .45, delay: i * .15 / TIME_SCALE, rate: 1.5, vary: .3 });
   bubble("ニャー", v3(-W * .3, 0, 0), 1000);
   const un = addFrameHook((dt, t) => cats.forEach((c, i) => {
     c.position.x += dt * (W + 8) / 3.2;
-    c.position.y += Math.cos(t * 18 + i) * dt * 2;
-    c.scale.x = -Math.abs(c.scale.y);
   }));
   await sleep(1200);
   bubble("ニャニャ", v3(W * .1, -H * .05, 0), 900);
@@ -689,7 +686,7 @@ async function cutCats() {
   bubble("…なんで猫？", v3(0, H * .25, 0), 1000);
   await sleep(1300);
   un();
-  cats.forEach(c => { V.stage.remove(c); c.material.dispose(); });
+  cats.forEach(c => c.userData.remove());
 }
 
 async function cutUfoFleet() {

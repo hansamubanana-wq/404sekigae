@@ -16,7 +16,6 @@ const V = {};
 const CSS = { boy: "#2f8cff", girl: "#ff4fb0", gold: "#fbbf24" };
 const HEX = { boy: 0x2f8cff, girl: 0xff4fb0, gold: 0xfbbf24, white: 0xffffff };
 const FONT = `"M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Hiragino Sans", sans-serif`;
-const EMOJI_FONT = `"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
 
 const FACE_W = 1.55, FACE_H = 0.83;   // 名札の大きさ
 const SX = 1.8, SZ = 1.5;             // 机の間隔
@@ -180,13 +179,6 @@ function frameCanvas() {
   return c;
 }
 
-function emojiCanvas(e) {
-  const c = makeCanvas(256, 256), x = c.getContext("2d");
-  x.textAlign = "center"; x.textBaseline = "middle";
-  x.font = `200px ${EMOJI_FONT}`;
-  x.fillText(e, 128, 140);
-  return c;
-}
 
 function podiumCanvas() {
   const c = makeCanvas(1024, 256), x = c.getContext("2d");
@@ -398,10 +390,6 @@ async function initWorld() {
     glow: canvasTex(glowCanvas()),
     lock: canvasTex(lockCanvas()),
     frame: canvasTex(frameCanvas()),
-    cat: canvasTex(emojiCanvas("🐈")),
-    wind: canvasTex(emojiCanvas("🌬️")),
-    clock: canvasTex(emojiCanvas("⏰")),
-    zzz: canvasTex(emojiCanvas("💤")),
   };
   const backC = makeCanvas(640, 342);
   drawBack(backC.getContext("2d"), 640, 342);
