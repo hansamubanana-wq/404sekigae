@@ -218,7 +218,7 @@ void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position
 
 // 奥のスクリーン: 星雲とオーロラ
 const WALL_FRAG = GLSL_NOISE + `
-uniform float uTime, uDim; varying vec3 vW;
+uniform float uTime, uDim; uniform vec3 uTint; varying vec3 vW;
 void main(){
   vec2 p = vW.xy * vec2(.07, .09);
   float t = uTime * .04;
@@ -236,13 +236,13 @@ void main(){
   float star = step(.982, h) * (1.0 - smoothstep(.0, .09, length(fract(sp) - .5 - jit*.6))) * (.4 + .6*sin(uTime*2.0 + h*90.0));
   col += star * vec3(.85,.9,1.0) * .8;
   col += vec3(.25,.35,1.0) * exp(-vW.y * 2.2) * .5;
-  gl_FragColor = vec4(col * uDim, 1.0);
+  gl_FragColor = vec4(col * uDim * uTint, 1.0);
 }
 `;
 
 // 床: 暗いガラスの床、グリッド、スポットライトの光だまり
 const FLOOR_FRAG = GLSL_NOISE + `
-uniform float uTime, uDim;
+uniform float uTime, uDim; uniform vec3 uTint;
 uniform vec3 uSpot[4]; uniform vec3 uSpotCol[4]; uniform vec4 uFocus; uniform vec3 uFocusCol;
 varying vec3 vW;
 void main(){
@@ -260,7 +260,7 @@ void main(){
   }
   col += uFocusCol * uFocus.w * (1.0 - smoothstep(0.0, 1.8, length(p - uFocus.xz))) * 1.4;
   col *= (1.0 - smoothstep(9.0, 30.0, length(p)));
-  gl_FragColor = vec4(col * uDim, 1.0);
+  gl_FragColor = vec4(col * uDim * uTint, 1.0);
 }
 `;
 
@@ -413,13 +413,14 @@ async function initWorld() {
     V.plateTex[s.no] = canvasTex(c);
   }
 
-  V.uniforms = { uTime: { value: 0 }, uDim: { value: 1 } };
+  V.uniforms = { uTime: { value: 0 }, uDim: { value: 1 }, uTint: { value: new THREE.Color(1, 1, 1) } };
   buildRoom();
   buildSpots();
   buildDesks();
   buildStage();
 
   V.camOffset = v3();
+  V.shakeAmt = 0;
   V.clock = new THREE.Clock();
   layoutWorld();
   addEventListener("resize", layoutWorld);
@@ -511,6 +512,7 @@ function buildSpots() {
     return { mesh: m, from: v3(...d.from), col: new THREE.Color(d.col), phase: i * 1.7, target: v3() };
   });
   V.spotSpeed = 1;
+  V.spotPower = 1;
   V.spotFocus = 0;   // 1 のとき全部のライトが V.spotFocusAt に集まる
   V.spotFocusAt = v3();
 }
@@ -839,6 +841,7 @@ function layoutWorld() {
     camera.updateMatrixWorld();
   }
 
+  V.lookTarget = target.clone();
   V.homePos = camera.position.clone();
   V.homeQuat = camera.quaternion.clone();
   V.fwd = fwd.clone();
@@ -914,9 +917,18 @@ function frame() {
   }
 
   // カメラ: ゆっくり揺れる + 寄り
-  const sway = v3(Math.sin(t * .23) * .18, Math.sin(t * .31) * .1, 0).applyQuaternion(V.homeQuat);
-  V.camera.position.copy(V.homePos).add(V.camOffset).add(sway);
-  V.camera.quaternion.copy(V.homeQuat);
+  if (V.camRig) {
+    V.camRig(dt, t);
+  } else {
+    const sway = v3(Math.sin(t * .23) * .18, Math.sin(t * .31) * .1, 0).applyQuaternion(V.homeQuat);
+    V.camera.position.copy(V.homePos).add(V.camOffset).add(sway);
+    V.camera.quaternion.copy(V.homeQuat);
+  }
+  if (V.shakeAmt > .002) {
+    const k = V.shakeAmt;
+    V.camera.position.add(v3((Math.random() - .5) * k, (Math.random() - .5) * k, (Math.random() - .5) * k * .5));
+    V.shakeAmt *= Math.pow(V.shakeKeep ? 1 : .015, dt);
+  }
 
   // スポットライト
   V.spotT = (V.spotT || 0) + dt * V.spotSpeed;
@@ -927,13 +939,16 @@ function frame() {
     s.target.copy(wander).lerp(V.spotFocusAt, V.spotFocus);
     aimBeam(s.mesh, s.from, s.target, lerp(1.7, 1.1, V.spotFocus));
     fu.uSpot.value[i].set(s.target.x, s.target.z, lerp(1.9, 1.3, V.spotFocus));
-    fu.uSpotCol.value[i].set(s.col.r, s.col.g, s.col.b);
+    fu.uSpotCol.value[i].set(s.col.r, s.col.g, s.col.b).multiplyScalar(V.spotPower);
+    s.mesh.material.uniforms.uOpacity.value = .16 * V.spotPower;
+    s.mesh.material.uniforms.uColor.value.copy(s.col);
   });
 
   // 名札がふわふわ浮く
   for (const key in V.seat) {
     const o = V.seat[key];
-    o.pivot.position.y = o.base.y + Math.sin(t * 1.3 + o.phase) * .03;
+    o.pivot.position.y = o.base.y + Math.sin(t * 1.3 + o.phase) * .03 + (o.jump || 0);
+    if (V.billboard) o.pivot.quaternion.copy(V.camera.quaternion);
   }
 
   if (V.onFrame) for (const f of V.onFrame) f(dt, t);
@@ -942,3 +957,16 @@ function frame() {
 }
 
 function addFrameHook(f) { (V.onFrame ||= new Set()).add(f); return () => V.onFrame.delete(f); }
+
+// 名札と机の光の明るさ (停電など)
+function setPlateDim(k) {
+  V.plateDim = k;
+  for (const key in V.seat) {
+    const o = V.seat[key];
+    o.front.material.color.setScalar(.86 * k);
+    o.back.material.color.setScalar(.9 * k);
+  }
+  V.uniforms.uDim.value = Math.max(.05, k);
+}
+
+function shake(amt) { V.shakeAmt = Math.max(V.shakeAmt, amt); }

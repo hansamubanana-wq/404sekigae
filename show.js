@@ -159,7 +159,7 @@ async function introDrum(s, label, pool) {
     for (const p of panels) {
       const a = p.th - phi;
       const c = Math.cos(a);
-      p.m.material.color.setScalar(Math.max(.08, Math.pow(Math.max(0, c), 3)));
+      p.m.material.color.setScalar(Math.max(.08, Math.pow(Math.max(0, c), 3)) * .84);
       const back = c < -.3;
       if (back && !p.wasBack) {
         const i = panels.indexOf(p);
@@ -729,30 +729,29 @@ async function land(s, key, style = "pop") {
 /* =========================================================
    1人分の発表
    ========================================================= */
-const INTRO_WEIGHTS = { particles: 34, lottery: 16, drum: 16, flip: 12, typing: 12, plain: 10 };
-const FLY_WEIGHTS = { arc: 22, stream: 18, decoy: 11, cat: 9, ufo: 9, wind: 8, clone: 8, overshoot: 7, sleep: 7 };
-const FLY_NEEDS = { decoy: 1, clone: 2 };
-
-function weighted(weights) {
-  const entries = Object.entries(weights);
-  let r = Math.random() * entries.reduce((a, [, w]) => a + w, 0);
-  for (const [k, w] of entries) if ((r -= w) < 0) return k;
-  return entries[0][0];
+// 山札方式: 全部ひととおり出るまで同じ演出は出ない
+class Deck {
+  constructor(list) { this.list = list; this.q = []; }
+  draw(ok) {
+    for (let tries = 0; tries < 2; tries++) {
+      if (!this.q.length) this.q = shuffleArray(this.list);
+      const i = this.q.findIndex(ok);
+      if (i >= 0) return this.q.splice(i, 1)[0];
+      this.q = [];
+    }
+    return this.list.find(ok) || this.list[0];
+  }
 }
-
-let lastIntro = null, lastFly = null;
-function chooseIntro(pending) {
-  const w = { ...INTRO_WEIGHTS };
-  if (pending < 1) delete w.drum;
-  delete w[lastIntro];
-  return (lastIntro = weighted(w));
+const INTRO_LIST = ["particles", "particles", "lottery", "drum", "flip", "typing", "meteor", "warp", "gift", "curtain", "shatter", "countdown", "quiz", "search", "glitch", "plain"];
+const FLY_LIST = ["arc", "stream", "stream", "decoy", "cat", "ufo", "wind", "clone", "overshoot", "sleep", "rocket", "bounce", "teleport", "meteorDrop", "spiral"];
+const FLY_NEEDS = { decoy: 1, clone: 2, bounce: 1 };
+let introDeck, flyDeck, lastIntro = null, lastFly = null;
+function resetDecks() {
+  introDeck = new Deck(INTRO_LIST);
+  flyDeck = new Deck(FLY_LIST);
+  lastIntro = lastFly = null;
 }
-function chooseFly(pending) {
-  const w = { ...FLY_WEIGHTS };
-  for (const [k, n] of Object.entries(FLY_NEEDS)) if (pending < n) delete w[k];
-  delete w[lastFly];
-  return (lastFly = weighted(w));
-}
+resetDecks();
 
 async function introPlain(s) {
   const c = card(), k = V.heroK;
@@ -767,18 +766,32 @@ async function introPlain(s) {
 const INTRO = {
   particles: (s, l) => introParticles(s, l),
   lottery: introLottery,
-  drum: (s, l, pool) => introDrum(s, l, pool),
+  drum: introDrum,
   flip: introFlip,
   typing: introTyping,
   plain: introPlain,
+  meteor: introMeteor,
+  warp: introWarp,
+  gift: introGift,
+  curtain: introCurtain,
+  shatter: introShatter,
+  countdown: introCountdown,
+  quiz: introQuiz,
+  search: introSearch,
+  glitch: introGlitch,
 };
-const FLY = { arc: flyArc, stream: flyStream, decoy: flyDecoy, cat: flyCat, ufo: flyUfo, wind: flyWind, clone: flyClone, overshoot: flyOvershoot, sleep: flySleep };
+const FLY = {
+  arc: flyArc, stream: flyStream, decoy: flyDecoy, cat: flyCat, ufo: flyUfo, wind: flyWind, clone: flyClone,
+  overshoot: flyOvershoot, sleep: flySleep, rocket: flyRocket, bounce: flyBounce, teleport: flyTeleport,
+  meteorDrop: flyMeteorDrop, spiral: flySpiral,
+};
 
-async function announce(s, key, index, total) {
+async function announce(s, key, index, total, force = {}) {
   const label = index === total ? "ラスト！" : `${index}人目`;
   const others = pendingOthers(key);
-  const intro = chooseIntro(others.length);
-  const fly = chooseFly(others.length);
+  const intro = force.intro || introDeck.draw(x => x !== lastIntro && (x !== "drum" || others.length >= 1));
+  const fly = force.fly || flyDeck.draw(x => x !== lastFly && (FLY_NEEDS[x] || 0) <= others.length && !(intro === "meteor" && x === "meteorDrop"));
+  lastIntro = intro; lastFly = fly;
 
   setHero(s, label);
   card().visible = false;
@@ -802,7 +815,7 @@ async function announce(s, key, index, total) {
    ========================================================= */
 async function showStart(movable) {
   V.spotSpeed = 5;
-  const b = banner("席替え、スタート！", 1700, "start");
+  const b = banner("席替え、スタート！", 1700, "kickoff");
   veil(true, 300);
   const order = [...movable].sort((a, b2) => seatXZ(b2).z - seatXZ(a).z);
   // 名札が後ろの列から次々と裏返る
@@ -817,6 +830,7 @@ async function showStart(movable) {
 }
 
 async function showFinale() {
+  endTension();
   veil(false, 300);
   dolly(-2.5, null, 1600);
   const keys = [...realSeatPositions].sort((a, b) => seatXZ(a).z - seatXZ(b).z);
