@@ -216,6 +216,44 @@ body.ready .loading, body.fallback .loading { opacity: 0; }
   to   { transform: scale(1); opacity: 1; }
 }
 
+/* バナーの種類 */
+.banner.count .big { font-size: clamp(120px, 24vw, 260px); color: #fff; text-shadow: 0 0 40px rgba(255,255,255,.8), 0 0 100px rgba(251,191,36,.7); }
+.banner.mode .big { color: #fff; text-shadow: 0 4px 0 #6d28d9, 0 0 30px rgba(167,139,250,.9), 0 0 90px rgba(56,189,248,.6); }
+.banner.speed .big { color: #fde047; text-shadow: 0 4px 0 #a16207, 0 0 30px rgba(253,224,71,.9), 0 0 90px rgba(250,204,21,.6); font-style: italic; }
+.banner.alert .big { color: #ff3b3b; text-shadow: 0 4px 0 #450a0a, 0 0 30px rgba(255,59,59,.9), 0 0 90px rgba(255,0,0,.5); animation: pop .7s cubic-bezier(.17,.67,.3,1.5) both, throb 1s ease-in-out .7s infinite; }
+@keyframes throb { 50% { transform: scale(1.06); } }
+
+/* 映画のような上下の黒帯と字幕 */
+body::before, body::after {
+  content: "";
+  position: fixed;
+  left: 0; right: 0;
+  height: 12vh;
+  background: #000;
+  z-index: 33;
+  pointer-events: none;
+  transition: transform .6s cubic-bezier(.6,0,.2,1);
+}
+body::before { top: 0; transform: translateY(-100%); }
+body::after { bottom: 0; transform: translateY(100%); }
+body.letterbox::before, body.letterbox::after { transform: none; }
+.caption {
+  position: fixed;
+  left: 0; right: 0;
+  bottom: 3.5vh;
+  z-index: 34;
+  text-align: center;
+  font-size: clamp(18px, 2.6vw, 28px);
+  font-weight: 800;
+  letter-spacing: .3em;
+  color: #fff;
+  pointer-events: none;
+  animation: fade-in .6s ease both;
+  transition: opacity .4s;
+}
+.caption.out { opacity: 0; }
+@keyframes fade-in { from { opacity: 0; transform: translateY(8px); } }
+
 /* ===== 2D の座席表 (印刷用 / 3D が使えないとき) ===== */
 .sheet-wrap { display: none; }
 body.fallback .sheet-wrap {
@@ -274,7 +312,8 @@ body.fallback .sheet-wrap {
 @media print {
   @page { size: landscape; margin: 10mm; }
   html, body { height: auto; overflow: visible; background: #fff !important; color: #111827; }
-  #scene, .hud, .loading, .bubble, .banner { display: none !important; }
+  #scene, .hud, .loading, .bubble, .banner, .caption { display: none !important; }
+  body::before, body::after { display: none; }
   .sheet-wrap { display: flex !important; flex-direction: column; position: static !important; }
   .sheet-desk { color: #111827; border-color: #111827; }
   .sheet { grid-template-rows: auto; gap: 6px; }

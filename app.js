@@ -161,13 +161,44 @@ async function shuffleSeats() {
     await showStart(movable);
     updateStatus();
     const order = shuffleArray(movable);
-    for (let i = 0; i < order.length; i++) {
-      await announce(seats[order[i]], order[i], i + 1, order.length);
+    const n = order.length;
+    const prog = buildProgram(n);
+    resetDecks();
+    let i = 0;
+    while (i < n) {
+      const evs = prog[i] || [];
+      for (const ev of evs) {
+        if (ev.cut === "halfway") await cutHalfway(n - i);
+        else if (ev.cut === "tension") await cutTension();
+        else if (ev.cut) await CUTS[ev.cut]();
+      }
+      const mode = (evs.find(e => e.mode) || {}).mode;
+      const item = j => ({ s: seats[order[j]], key: order[j] });
+      if (mode === "double" && n - i >= 5) {
+        await announceDouble(item(i), item(i + 1), i + 1);
+        i += 2;
+      } else if (mode === "speed" && n - i >= 7) {
+        await speedRound([0, 1, 2, 3].map(d => item(i + d)), i + 1);
+        i += 4;
+      } else if (i === n - 1 && n >= 5) {
+        letterbox(true);
+        await banner("最後の1人…", 1800, "alert");
+        letterbox(false);
+        await announce(seats[order[i]], order[i], i + 1, n, {
+          intro: pick(["search", "curtain", "warp"]),
+          fly: pick(["meteorDrop", "spiral", "rocket"]),
+        });
+        i++;
+      } else {
+        await announce(seats[order[i]], order[i], i + 1, n);
+        i++;
+      }
     }
     await showFinale();
   } catch (e) {
     console.error(e);
   } finally {
+    if (worldReady) { endTension(); letterbox(false); V.camRig = null; V.billboard = false; setPlateDim(1); V.spotPower = 1; }
     hidden.clear();
     syncAllSeats();
     setBusy(false);
