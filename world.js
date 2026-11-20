@@ -617,7 +617,7 @@ function buildStage() {
     new THREE.MeshPhysicalMaterial({ color: 0x0b1030, metalness: .6, roughness: .2, clearcoat: 1, clearcoatRoughness: .08, transparent: true }));
   const rim = new THREE.Mesh(new V.RoundedBox(FACE_W + .14, FACE_H + .14, .03, 4, .09),
     new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true }));
-  rim.position.z = -.025;
+  rim.position.z = 0;   // 本体の厚みの内側に置く (裏から見たとき枠が全面を覆わないように)
   const heroC = makeCanvas(1280, 685);
   V.heroCanvas = heroC;
   V.tex.hero = canvasTex(heroC);
