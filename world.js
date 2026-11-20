@@ -590,6 +590,8 @@ function syncAllSeats() {
 
 function flipPlate(key, toBack, ms = 520) {
   const o = V.seat[key];
+  const now = performance.now();
+  if (typeof sfx === "function" && now - (V.lastFlipSfx || 0) > 70) { V.lastFlipSfx = now; sfx("flip", { vol: .5, vary: .15, pan: seatXZ(key).x / 8 }); }
   const r0 = o.flipper.rotation.y, r1 = toBack ? Math.PI : 0;
   return tween(ms, t => {
     o.flipper.rotation.y = lerp(r0, r1, t);
