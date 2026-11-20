@@ -287,24 +287,6 @@ async function introCountdown(s) {
   await sleep(1000);
 }
 
-// クイズ: 読み方だけ先に出る。だれでしょう？
-async function introQuiz(s, label) {
-  const c = card(), k = V.heroK;
-  drawHero(s, { label, name: "" });
-  c.visible = true;
-  c.scale.setScalar(.01);
-  await tween(450, t => c.scale.setScalar(Math.max(.01, k * t)), ease.back);
-  bubble("この読み方は…だれ？", v3(0, FACE_H * k * .72, 0), 2000);
-  await tween(2200, t => { c.rotation.z = Math.sin(t * Math.PI * 6) * .02; }, ease.linear);
-  await tween(250, t => { c.rotation.y = t * Math.PI / 2; }, ease.in);
-  drawHero(s, { label });
-  await tween(450, t => { c.rotation.y = (1 - t) * -Math.PI / 2; }, ease.back);
-  c.rotation.set(0, 0, 0);
-  bubble("正解は…！", v3(0, FACE_H * k * .72, 0), 900);
-  burst(v3(0, 0, .3), [hdr(HEX[s.gender], 3), hdr(HEX.gold, 3)], 150, 4);
-  await sleep(1300);
-}
-
 // サーチライト: ライトが教室中を探しまわり、真ん中から名前がせり上がる
 async function introSearch(s) {
   const c = card(), k = V.heroK;
@@ -587,25 +569,6 @@ async function speedRound(list, startIdx) {
 /* =========================================================
    カットシーン
    ========================================================= */
-async function cutEarthquake() {
-  bubble("じ、地震！？", v3(0, V.visH * .25, 0), 1500);
-  V.shakeKeep = true; V.shakeAmt = .25;
-  const un = addFrameHook((dt, t) => {
-    for (const key in V.seat) {
-      const o = V.seat[key];
-      o.jump = Math.abs(Math.sin(t * 17 + o.phase * 3)) * .18;
-      o.pivot.rotation.z = Math.sin(t * 23 + o.phase) * .12;
-    }
-  });
-  await sleep(2400);
-  V.shakeKeep = false;
-  un();
-  for (const key in V.seat) { V.seat[key].jump = 0; V.seat[key].pivot.rotation.z = 0; }
-  await sleep(500);
-  bubble("…気のせいでした", v3(0, V.visH * .25, 0), 1300);
-  await sleep(1400);
-}
-
 async function cutBlackout() {
   const flash = beamMesh(0xfff2cc, 0);
   V.scene.add(flash);
@@ -761,7 +724,7 @@ function endTension() {
   }, ease.inOut);
 }
 
-const CUTS = { earthquake: cutEarthquake, blackout: cutBlackout, tour: cutTour, cats: cutCats, ufos: cutUfoFleet };
+const CUTS = { blackout: cutBlackout, tour: cutTour, cats: cutCats, ufos: cutUfoFleet };
 
 /* =========================================================
    進行表: いつカットシーンや特別モードを入れるか

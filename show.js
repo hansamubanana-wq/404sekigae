@@ -213,37 +213,6 @@ async function introFlip(s) {
   await sleep(1000);
 }
 
-// 1文字ずつ焦らして出す
-async function introTyping(s, label) {
-  const c = card(), k = V.heroK;
-  drawHero(s, { label, name: "", kana: "" });
-  c.visible = true;
-  c.scale.setScalar(.01);
-  await tween(450, t => c.scale.setScalar(Math.max(.01, k * t)), ease.back);
-  await sleep(500);
-  const chars = [...s.name];
-  const ctx = V.heroCanvas.getContext("2d");
-  let shown = "";
-  for (let i = 0; i < chars.length; i++) {
-    if (i === chars.length - 1) {
-      bubble("…", v3(0, FACE_H * k * .7, 0), 1300);
-      await sleep(1500);
-    }
-    shown += chars[i];
-    const { x0, fs } = drawFace(ctx, 1280, 685, s, { label, name: shown, kana: "" });
-    V.tex.hero.needsUpdate = true;
-    if (chars[i] !== " ") {
-      ctx.font = `900 ${fs}px ${FONT}`;
-      const cx = x0 + ctx.measureText(shown).width - ctx.measureText(chars[i]).width / 2;
-      burst(v3((cx / 1280 - .5) * FACE_W * k, (.5 - .66) * FACE_H * k, .3), [hdr(HEX[s.gender], 3), hdr(0xffffff, 2)], 40, 1.8, { life: .6 });
-    }
-    await sleep(chars[i] === " " ? 150 : 460);
-  }
-  drawHero(s, { label });
-  await tween(380, t => c.scale.setScalar(k * (1 + Math.sin(t * Math.PI) * .08)), ease.out);
-  await sleep(1000);
-}
-
 // 抽選マシン: ガラス球の中でボールが跳ね回り、1個飛び出して名前になる
 async function introLottery(s, label) {
   const R = Math.min(1.45, V.visH * .3), r = R * .12;
@@ -742,7 +711,7 @@ class Deck {
     return this.list.find(ok) || this.list[0];
   }
 }
-const INTRO_LIST = ["particles", "particles", "lottery", "drum", "flip", "typing", "meteor", "warp", "gift", "curtain", "shatter", "countdown", "quiz", "search", "glitch", "plain"];
+const INTRO_LIST = ["particles", "particles", "lottery", "drum", "flip", "meteor", "warp", "gift", "curtain", "shatter", "countdown", "search", "glitch", "plain"];
 const FLY_LIST = ["arc", "stream", "stream", "decoy", "cat", "ufo", "wind", "clone", "overshoot", "sleep", "rocket", "bounce", "teleport", "meteorDrop", "spiral"];
 const FLY_NEEDS = { decoy: 1, clone: 2, bounce: 1 };
 let introDeck, flyDeck, lastIntro = null, lastFly = null;
@@ -768,7 +737,6 @@ const INTRO = {
   lottery: introLottery,
   drum: introDrum,
   flip: introFlip,
-  typing: introTyping,
   plain: introPlain,
   meteor: introMeteor,
   warp: introWarp,
@@ -776,7 +744,6 @@ const INTRO = {
   curtain: introCurtain,
   shatter: introShatter,
   countdown: introCountdown,
-  quiz: introQuiz,
   search: introSearch,
   glitch: introGlitch,
 };
