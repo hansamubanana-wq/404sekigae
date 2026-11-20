@@ -580,9 +580,10 @@ async function flyClone(s, key) {
   await tween(500, t => c.scale.setScalar(lerp(k, sm, t)), ease.out);
   bubble("分身の術！", v3(0, FACE_H * sm * .9, 0), 1100);
 
+  // 分身は本物とは別の物体として作る (見た目は同じ)
   const clones = [0, 1].map(() => {
-    const o = c.clone(true);
-    V.stage.add(o);
+    const o = makeExtraCard(s, V.heroLabel);
+    o.scale.setScalar(sm);
     return o;
   });
   const gap = Math.min(W * .3, FACE_W * sm * 1.15);
@@ -603,14 +604,19 @@ async function flyClone(s, key) {
     }), ease.inOut);
   }
 
+  // それぞれの席の少し上・手前に浮かせて待つ (名札と重ならないように)
   const targets = [key, ...decoys];
+  const hover = v3(0, .55, .7);
   const starts = all.map(o => o.position.clone());
-  const ends = targets.map(k2 => plateLocal(k2));
+  const ends = targets.map(k2 => plateLocal(k2).add(hover));
   dolly(-.05, null, 900);
   await tween(1100, t => all.forEach((o, i) => {
     o.position.copy(bez(starts[i], starts[i].clone().lerp(ends[i], .5).add(v3(0, 1.8, .5)), ends[i], t));
     o.scale.setScalar(lerp(sm, 1, t));
   }), ease.inOut);
+  const bob = addFrameHook((dt, t) => all.forEach((o, i) => {
+    if (o.parent) o.position.y = ends[i].y + Math.sin(t * 3 + i * 2) * .06;
+  }));
   bubble("どれが本物？", v3(0, V.visH * .35, 0), 1300);
   await sleep(1500);
 
@@ -618,10 +624,19 @@ async function flyClone(s, key) {
     const o = clones[i];
     bubble("ドロン", o.position.clone().add(v3(0, .5, 0)), 700);
     burst(o.position.clone(), hdr(0xffffff, 1.6), 70, 1.5, { life: .8, grav: -.5 });
-    await tween(350, t => { o.scale.setScalar(1 - t); o.rotation.z = t * 3; }, ease.in);
+    await tween(350, t => { o.scale.setScalar(1 - t * .99); o.rotation.z = t * 3; }, ease.in);
     V.stage.remove(o);
+    o.userData.dispose();
     await sleep(500);
   }
+  bob();
+
+  // 残った本物が席に降りる
+  bubble("本物はこっち！", c.position.clone().add(v3(0, .6, 0)), 900);
+  await sleep(500);
+  const P = plateLocal(key), q0 = c.position.clone();
+  dolly(.18, key, 500);
+  await tween(450, t => c.position.lerpVectors(q0, P, t), ease.in);
 }
 
 // 行きすぎ: 勢いあまって奥へ飛んでいく → そろ〜りと戻ってくる
