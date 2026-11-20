@@ -52,6 +52,7 @@ const ease = {
 function tween(ms, fn, e = ease.inOut) {
   return new Promise(res => {
     const start = performance.now();
+    fn(e(0));   // 最初の状態をすぐ反映 (1コマだけ完成形が見えるのを防ぐ)
     function step(now) {
       const t = Math.min(1, (now - start) * TIME_SCALE / ms);
       fn(e(t));
