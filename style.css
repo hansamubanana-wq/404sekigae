@@ -214,6 +214,17 @@ body.ready .loading, body.fallback .loading { opacity: 0; }
   text-shadow: 0 2px 0 #fff3c4, 0 6px 0 #a35a00, 0 0 30px rgba(251,191,36,.75), 0 0 80px rgba(251,191,36,.45);
   animation: pop .7s cubic-bezier(.17,.67,.3,1.5) both;
 }
+.banner.finale .big::before, .banner.finale .big::after {
+  content: "";
+  display: inline-block;
+  width: 1.1em; height: .09em;
+  margin: 0 .35em;
+  vertical-align: middle;
+  border-radius: 1em;
+  background: linear-gradient(90deg, transparent, #ffe9a8);
+  box-shadow: 0 0 18px rgba(251,191,36,.9);
+}
+.banner.finale .big::after { background: linear-gradient(90deg, #ffe9a8, transparent); }
 .banner.finale .big { color: #fff; text-shadow: 0 6px 0 rgba(120,60,0,.5), 0 0 30px rgba(255,255,255,.7), 0 0 80px rgba(251,191,36,.6); }
 @keyframes pop {
   from { transform: scale(.2) rotate(-6deg); opacity: 0; }
@@ -224,7 +235,20 @@ body.ready .loading, body.fallback .loading { opacity: 0; }
 /* バナーの種類 */
 .banner.count .big { font-size: clamp(120px, 24vw, 260px); color: #fff; text-shadow: 0 0 40px rgba(255,255,255,.8), 0 0 100px rgba(251,191,36,.7); }
 .banner.mode .big { color: #fff; text-shadow: 0 4px 0 #6d28d9, 0 0 30px rgba(167,139,250,.9), 0 0 90px rgba(56,189,248,.6); }
-.banner.speed .big { color: #fde047; text-shadow: 0 4px 0 #a16207, 0 0 30px rgba(253,224,71,.9), 0 0 90px rgba(250,204,21,.6); font-style: italic; }
+.banner.speed .big::after {
+  content: "";
+  position: absolute;
+  left: -30%; right: -30%; top: 50%;
+  height: 1.1em;
+  transform: translateY(-50%);
+  z-index: -1;
+  background: repeating-linear-gradient(180deg, transparent 0 .12em, rgba(253,224,71,.55) .12em .16em, transparent .16em .3em);
+  -webkit-mask: linear-gradient(90deg, transparent, #000 25%, #000 75%, transparent);
+  mask: linear-gradient(90deg, transparent, #000 25%, #000 75%, transparent);
+  animation: speedlines .35s linear infinite;
+}
+@keyframes speedlines { from { background-position: 0 0; } to { background-position: 0 .3em; } }
+.banner.speed .big { position: relative; color: #fde047; font-style: italic; text-shadow: 0 4px 0 #a16207, -.18em 0 0 rgba(253,224,71,.35), -.36em 0 0 rgba(253,224,71,.15), 0 0 30px rgba(253,224,71,.9), 0 0 90px rgba(250,204,21,.6); }
 .banner.alert .big { color: #ff3b3b; text-shadow: 0 4px 0 #450a0a, 0 0 30px rgba(255,59,59,.9), 0 0 90px rgba(255,0,0,.5); animation: pop .7s cubic-bezier(.17,.67,.3,1.5) both, throb 1s ease-in-out .7s infinite; }
 @keyframes throb { 50% { transform: scale(1.06); } }
 

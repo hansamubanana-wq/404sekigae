@@ -89,13 +89,6 @@ function floorFocus(key, on) {
   return tween(on ? 300 : 1200, t => { u.uFocus.value.w = lerp(a0, a1, t); }, ease.out);
 }
 
-function emojiSprite(tex, size) {
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
-  s.scale.set(size, size, 1);
-  s.renderOrder = 7;
-  V.stage.add(s);
-  return s;
-}
 
 // 3次ベジェの補間
 function bez(p0, c, p1, t) {
@@ -432,16 +425,16 @@ async function flyCat(s, key) {
   await tween(700, t => { c.position.lerpVectors(p0, mid, t); c.scale.setScalar(lerp(s0, small, t)); }, ease.out);
 
   const fromLeft = Math.random() < .5;
-  const cat = emojiSprite(V.tex.cat, 1.5);
-  let flip = fromLeft ? -1 : 1;
-  cat.position.set(fromLeft ? -W / 2 - 1.5 : W / 2 + 1.5, mid.y - .3, 0);
+  const CS = 1.3;
+  const cat = stageActor(buildCat(pick([0xf2a541, 0x9aa3ad, 0x3a3a3a, 0xf6efe4])));
+  let flip = fromLeft ? -1 : 1;   // -1 = 右へ走る
+  cat.position.set(fromLeft ? -W / 2 - 1.5 : W / 2 + 1.5, mid.y - .75, .2);
   let carry = false;
   const unhook = addFrameHook((dt, tt) => {
-    cat.scale.set(1.5 * flip, 1.5, 1);
-    cat.material.rotation = Math.sin(tt * 22) * .08;
+    cat.scale.set(CS * -flip, CS, CS);
     if (carry) {
-      c.position.copy(cat.position).add(v3(flip < 0 ? .85 : -.85, .25 + Math.abs(Math.sin(tt * 22)) * .1, .05));
-      c.rotation.z = Math.sin(tt * 14) * .14;
+      c.position.copy(cat.position).add(v3(flip < 0 ? .95 * CS : -.95 * CS, .62 * CS + Math.abs(Math.sin(tt * 18)) * .05, .25));
+      c.rotation.z = Math.sin(tt * 14) * .12;
     }
   });
   bubble("！？", c.position.clone().add(v3(0, .7, 0)), 800);
@@ -451,10 +444,10 @@ async function flyCat(s, key) {
     for (let i = 0; i < ms / 140; i++) sfx("step", { vol: .5, delay: i * .14 / TIME_SCALE, rate: 1.4, vary: .2 });
     return tween(ms, t => {
       cat.position.lerpVectors(a, to, t);
-      cat.position.y += Math.abs(Math.sin(t * Math.PI * 6)) * .25;
+      cat.position.y += Math.abs(Math.sin(t * Math.PI * 6)) * .1;
     }, ease.inOut);
   };
-  await run(v3(mid.x + (fromLeft ? -1 : 1), mid.y - .3, 0), 900);
+  await run(v3(mid.x + (fromLeft ? -1.6 : 1.6), mid.y - .75, .2), 900);
   bubble("ニャッ", cat.position.clone().add(v3(0, .9, 0)), 800);
   await sleep(300);
   carry = true;
@@ -462,18 +455,18 @@ async function flyCat(s, key) {
   let right = cat.position.x < 0;
   const n = Math.random() < .5 ? 3 : 2;
   for (let i = 0; i < n; i++) {
-    const p = v3(right ? rand(W * .25, W * .4) : -rand(W * .25, W * .4), rand(-H * .38, H * .15), rand(-2, .5));
+    const p = v3(right ? rand(W * .25, W * .38) : -rand(W * .25, W * .38), rand(-H * .42, H * .05), rand(-2, .5));
     right = !right;
     await run(p, 750);
   }
   // 席へ向かって奥へ走っていく
-  const goal = P.clone().add(v3(P.x > cat.position.x ? -.9 : .9, -.25, 0));
+  const goal = P.clone().add(v3(P.x > cat.position.x ? -.95 * CS : .95 * CS, -.62 * CS, -.25));
   const cs0 = c.scale.x;
   const a = cat.position.clone();
   flip = goal.x > a.x ? -1 : 1;
   await tween(1100, t => {
     cat.position.lerpVectors(a, goal, t);
-    cat.position.y += Math.abs(Math.sin(t * Math.PI * 8)) * .2;
+    cat.position.y += Math.abs(Math.sin(t * Math.PI * 8)) * .08;
     c.scale.setScalar(lerp(cs0, 1, t));
   }, ease.inOut);
   carry = false;
@@ -481,7 +474,7 @@ async function flyCat(s, key) {
   await tween(280, t => { c.position.lerpVectors(q0, P, t); c.rotation.z *= .8; }, ease.out);
   c.rotation.set(0, 0, 0);
   const exit = v3(cat.position.x > 0 ? W + 4 : -W - 4, cat.position.y - .5, cat.position.z);
-  run(exit, 1100).then(() => { unhook(); V.stage.remove(cat); cat.material.dispose(); });
+  run(exit, 1100).then(() => { unhook(); cat.userData.remove(); });
 }
 
 // UFO: 名前を吸い上げて連れ去り、遠回りして席の上から降ろす
@@ -574,13 +567,12 @@ async function flyWind(s, key) {
   const c = card(), P = plateLocal(key);
   const W = V.visW, H = V.visH;
   const toRight = Math.random() < .5;
-  const wind = emojiSprite(V.tex.wind, 1.8);
   const wy = c.position.y;
-  wind.position.set(toRight ? -W / 2 - 2 : W / 2 + 2, wy, .5);
-  wind.scale.x = toRight ? -1.8 : 1.8;
-  const w0 = wind.position.clone();
-  await tween(500, t => wind.position.lerpVectors(w0, v3(toRight ? -W * .38 : W * .38, wy, .5), t), ease.out);
-  bubble("ビュオォォ！", wind.position.clone().add(v3(0, 1, 0)), 1100);
+  const gust = stageActor(buildGust(W, H));
+  gust.scale.x = toRight ? 1 : -1;
+  bubble("ビュオォォ！", v3(toRight ? -W * .3 : W * .3, wy + 1.2, .5), 1100);
+  const gusting = tween(2000, t => gust.userData.progress(t), ease.linear);
+  await sleep(450);
 
   const p0 = c.position.clone(), s0 = c.scale.x;
   await tween(1300, t => {
@@ -588,9 +580,7 @@ async function flyWind(s, key) {
     c.scale.setScalar(s0 * (1 - t * .4));
     c.rotation.set(t * 9, t * 6 * (toRight ? 1 : -1), t * 12 * (toRight ? -1 : 1));
   }, ease.in);
-  const wx = wind.position.clone();
-  tween(500, t => wind.position.lerpVectors(wx, v3(toRight ? -W - 3 : W + 3, wy, .5), t), ease.linear)
-    .then(() => { V.stage.remove(wind); wind.material.dispose(); });
+  gusting.then(() => gust.userData.remove());
   await sleep(800);
 
   bubble("…", v3(0, H * .35, 0), 800);
@@ -700,12 +690,15 @@ async function flySleep(s, key) {
   const mid = p0.clone().lerp(P, .3);
   await tween(1000, t => { c.position.lerpVectors(p0, mid, t); c.scale.setScalar(lerp(s0, s0 * .7, t)); }, ease.out);
   await tween(900, t => { c.rotation.z = -.45 * t; c.position.y = mid.y - .3 * t; }, ease.inOut);
-  const z = emojiSprite(V.tex.zzz, .9);
-  const unZ = addFrameHook((dt, t) => { z.position.copy(c.position).add(v3(1.2 + Math.sin(t * 2) * .2, .8 + (t % 1.4) * .5, .2)); z.material.opacity = 1 - (t % 1.4) / 1.4; });
+  const z = stageActor(buildZs());
+  const unZ = addFrameHook(() => z.position.copy(c.position).add(v3(FACE_W * c.scale.x * .45, FACE_H * c.scale.x * .4, .3)));
   await sleep(2100);
-  unZ(); V.stage.remove(z);
-  const clock = emojiSprite(V.tex.clock, 1.1);
-  clock.position.copy(c.position).add(v3(-2, .6, .5));
+  unZ(); z.userData.remove();
+  const clock = stageActor(buildClock());
+  clock.scale.setScalar(.95);
+  clock.position.copy(c.position).add(v3(-2.1, .5, .6));
+  clock.rotation.y = .35;
+  clock.userData.ring = true;
   bubble("ジリリリリ！", clock.position.clone().add(v3(0, .8, 0)), 1000);
   const y0 = c.position.y, cl0 = clock.position.clone();
   await tween(700, t => {
@@ -713,7 +706,8 @@ async function flySleep(s, key) {
     c.position.y = y0 + Math.sin(t * Math.PI) * .6;
     clock.position.x = cl0.x + Math.sin(t * 60) * .05;
   }, ease.linear);
-  V.stage.remove(clock);
+  clock.userData.ring = false;
+  tween(300, t => clock.scale.setScalar(.95 * (1 - t) + .01), ease.in).then(() => clock.userData.remove());
   c.rotation.z = 0;
   bubble("やばっ", c.position.clone().add(v3(0, .8, 0)), 700);
   await sleep(300);
@@ -862,7 +856,8 @@ async function showFinale() {
     tween(700, t => o.strip.material.color.copy(col.clone().multiplyScalar(lerp(7, 2.4, t))), ease.out);
   }));
   V.spotSpeed = 4;
-  const b = banner("🎊 全員決定！ 🎊", 3000, "finale");
+  const b = banner("全員決定！", 3000, "finale");
+  confettiShower(6000);
   const palettes = [[0xfbbf24, 0xffffff], [0x2f8cff, 0x7dd3fc], [0xff4fb0, 0xfda4d4], [0xa78bfa, 0xffffff], [0x34d399, 0xfbbf24]];
   for (let i = 0; i < 12; i++) {
     firework(pick(palettes));
