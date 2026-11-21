@@ -538,60 +538,6 @@ async function landExtra(g, s, key) {
   card().visible = c0;
 }
 
-async function announceDouble(A, B, idx) {
-  const label = `${idx}・${idx + 1}人目`;
-  const pair = [A, B];
-  await banner("2人同時発表！", 1300, "mode");
-  veil(true, 400);
-  const k = Math.min(V.heroK * .7, V.visW * .4 / FACE_W);
-  const gap = FACE_W * k * .56;
-  const cards = pair.map(p => makeExtraCard(p.s, label));
-  cards.forEach((g, i) => { g.position.set(i ? gap : -gap, i ? -.15 : .15, 0); g.scale.setScalar(.01); g.rotation.z = i ? .05 : -.05; });
-  for (let i = 0; i < 2; i++) {
-    burst(cards[i].position, [hdr(HEX[pair[i].s.gender], 3), hdr(HEX.gold, 3)], 120, 4);
-    tween(550, t => cards[i].scale.setScalar(Math.max(.01, k * t)), ease.back);
-    await sleep(350);
-  }
-  await sleep(1500);
-  veil(false, 500);
-  await Promise.all(cards.map((g, i) => {
-    const P = plateLocal(pair[i].key), p0 = g.position.clone(), s0 = g.scale.x;
-    const ctrl = p0.clone().lerp(P, .4).add(v3(i ? 1 : -1, 2.4, 1));
-    return sleep(i * 250).then(() => tween(1100, t => {
-      g.position.copy(bez(p0, ctrl, P, t));
-      g.scale.setScalar(lerp(s0, 1, t));
-      g.rotation.y = Math.sin(t * Math.PI) * (i ? -.7 : .7);
-    }, ease.inOut)).then(() => landExtra(g, pair[i].s, pair[i].key));
-  }));
-  await sleep(700);
-}
-
-async function speedRound(list, startIdx) {
-  await banner("高速モード", 1200, "mode speed");
-  V.spotSpeed = 4;
-  for (let i = 0; i < list.length; i++) {
-    const { s, key } = list[i];
-    const label = `${startIdx + i}人目`;
-    setHero(s, label);
-    const c = card(), k = V.heroK;
-    c.visible = true;
-    c.scale.setScalar(.01);
-    c.position.set(rand(-.6, .6), rand(-.3, .3), 0);
-    burst(c.position, hdr(HEX[s.gender], 3), 80, 4, { life: .7 });
-    await tween(260, t => c.scale.setScalar(Math.max(.01, k * t)), ease.back);
-    await sleep(650);
-    const P = plateLocal(key), p0 = c.position.clone();
-    await tween(520, t => { c.position.lerpVectors(p0, P, t); c.scale.setScalar(lerp(k, 1, t)); c.rotation.z = t * Math.PI * 2; }, ease.in);
-    c.rotation.set(0, 0, 0);
-    land(s, key, "pop");
-    shake(.12);
-    sfx("slam", { vol: .5 });
-    await sleep(250);
-  }
-  V.spotSpeed = 1;
-  await sleep(500);
-}
-
 /* =========================================================
    カットシーン
    ========================================================= */
@@ -725,7 +671,7 @@ async function cutHalfway(remain) {
   await sleep(400);
 }
 
-async function cutTension() {
+async function cutTension(remain = 3) {
   const tint = V.uniforms.uTint.value;
   const cols = V.spots.map(s => s.col.clone());
   await tween(700, t => {
@@ -733,7 +679,7 @@ async function cutTension() {
     V.spots.forEach((s, i) => s.col.copy(cols[i]).lerp(new THREE.Color(0xff2a2a), t));
   }, ease.inOut);
   letterbox(true);
-  banner("ラスト3人…", 2600, "alert");
+  banner(`ラスト${remain}人…`, 2600, "alert");
   for (let b = 0; b < 3; b++) {
     shake(.06);
     sfx("heart", { vol: 1, rate: .7 }); sfx("heart", { vol: .7, rate: .7, delay: .18 });
@@ -761,25 +707,23 @@ const CUTS = { blackout: cutBlackout, tour: cutTour, cats: cutCats, ufos: cutUfo
 /* =========================================================
    進行表: いつカットシーンや特別モードを入れるか
    ========================================================= */
-function buildProgram(n) {
-  const at = {};     // 人数インデックス → その前に入れるイベント
+// R = 発表の回数 (2人ずつの組の数)。インデックス → その組の前に入れるカットシーン
+function buildProgram(R) {
+  const at = {};
   const add = (i, e) => (at[i] ||= []).push(e);
   const used = new Set();
-  const free = i => i > 1 && i < n - 4 && ![...used].some(u => Math.abs(u - i) < 3);
+  const free = i => i > 0 && i < R - 2 && ![...used].some(u => Math.abs(u - i) < 2);
   const place = (want, e) => {
-    for (const d of [0, 1, -1, 2, -2, 3, -3]) {
+    for (const d of [0, 1, -1, 2, -2]) {
       const i = Math.round(want) + d;
       if (free(i)) { used.add(i); add(i, e); return true; }
     }
     return false;
   };
-  if (n >= 10) { const i = Math.floor(n / 2); used.add(i); add(i, { cut: "halfway" }); }
-  if (n >= 7) add(n - 3, { cut: "tension" });
-  if (n >= 14) place(n * .28, { mode: "double" });
-  if (n >= 22) place(n * .72, { mode: "double" });
-  if (n >= 18) place(n * .62, { mode: "speed" });
+  if (R >= 6) { const i = Math.floor(R / 2); used.add(i); add(i, { cut: "halfway" }); }
+  if (R >= 4) add(R - 2, { cut: "tension" });
   const cuts = shuffleArray(Object.keys(CUTS));
-  const nc = Math.min(cuts.length, Math.floor(n / 7));
-  for (let k = 0; k < nc; k++) place((k + 1) * n / (nc + 1) + rand(-1.5, 1.5), { cut: cuts[k] });
+  const nc = Math.min(cuts.length, Math.floor(R / 5));
+  for (let k = 0; k < nc; k++) place((k + 1) * R / (nc + 1) + rand(-1, 1), { cut: cuts[k] });
   return at;
 }

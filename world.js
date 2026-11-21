@@ -286,8 +286,8 @@ void main(){ float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 3.0); g
 const PARTICLE_VERT = `
 uniform float uTime, uForm, uStream, uSize, uSwirl, uPix;
 uniform vec3 uDest, uCtrl; uniform vec2 uDestSize;
-attribute vec3 aStart; attribute vec4 aRand;
-varying float vA; varying float vM;
+attribute vec3 aStart; attribute vec4 aRand; attribute float aSide;
+varying float vA; varying float vM; varying float vS;
 vec3 rotZ(vec3 p, float a){ float c = cos(a), s = sin(a); return vec3(c*p.x - s*p.y, s*p.x + c*p.y, p.z); }
 float eo(float t){ return 1.0 - pow(1.0 - t, 3.0); }
 float eio(float t){ return t < .5 ? 4.0*t*t*t : 1.0 - pow(-2.0*t + 2.0, 3.0) / 2.0; }
@@ -310,13 +310,14 @@ void main(){
   gl_PointSize = uSize * uPix * (.55 + aRand.y*.9) * (1.0 + (1.0 - fe)*.8) / -mv.z;
   vA = .3 + .7*f;
   vM = aRand.w;
+  vS = aSide;
 }`;
 const PARTICLE_FRAG = `
-uniform vec3 uColA, uColB; uniform float uFade; varying float vA; varying float vM;
+uniform vec3 uColA, uColA2, uColB; uniform float uFade; varying float vA; varying float vM; varying float vS;
 void main(){
   float r = length(gl_PointCoord - .5);
   float a = 1.0 - smoothstep(0.0, .5, r); a *= a;
-  vec3 col = mix(uColA, uColB, step(.78, vM));
+  vec3 col = mix(mix(uColA, uColA2, vS), uColB, step(.78, vM));
   gl_FragColor = vec4(col * a * vA * uFade, 1.0);
 }`;
 
@@ -660,13 +661,14 @@ function buildParticles() {
   g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(N * 3), 3));
   g.setAttribute("aStart", new THREE.BufferAttribute(new Float32Array(N * 3), 3));
   g.setAttribute("aRand", new THREE.BufferAttribute(rnd, 4));
+  g.setAttribute("aSide", new THREE.BufferAttribute(new Float32Array(N), 1));
   const mat = new THREE.ShaderMaterial({
     vertexShader: PARTICLE_VERT,
     fragmentShader: PARTICLE_FRAG,
     uniforms: {
       uTime: V.uniforms.uTime, uForm: { value: 0 }, uStream: { value: 0 }, uSize: { value: .05 },
       uSwirl: { value: 5 }, uPix: { value: 1 }, uDest: { value: v3() }, uCtrl: { value: v3() },
-      uDestSize: { value: new THREE.Vector2(FACE_W, FACE_H) }, uColA: { value: new THREE.Color() }, uColB: { value: new THREE.Color() }, uFade: { value: 0 },
+      uDestSize: { value: new THREE.Vector2(FACE_W, FACE_H) }, uColA: { value: new THREE.Color() }, uColA2: { value: new THREE.Color() }, uColB: { value: new THREE.Color() }, uFade: { value: 0 },
     },
     transparent: true,
     depthWrite: false,
@@ -724,6 +726,7 @@ function particleStart(mode, at) {
 function particleColors(gender) {
   const u = V.particles.u;
   u.uColA.value.copy(hdr(HEX[gender], 1.5));
+  u.uColA2.value.copy(u.uColA.value);
   u.uColB.value.set(1.6, 1.45, 1.1);
 }
 
@@ -928,6 +931,7 @@ function frame() {
     const a = V.spotT * .35 + s.phase;
     const wander = v3(Math.sin(a) * 6.5, 0, Math.cos(a * .8 + i) * 4.2 - .6);
     s.target.copy(wander).lerp(V.spotFocusAt, V.spotFocus);
+    if (V.spotLock && V.spotLock[i]) s.target.lerp(V.spotLock[i], V.spotLockAmt || 0);   // 1本ずつ別の場所に向ける
     aimBeam(s.mesh, s.from, s.target, lerp(1.7, 1.1, V.spotFocus));
     fu.uSpot.value[i].set(s.target.x, s.target.z, lerp(1.9, 1.3, V.spotFocus));
     fu.uSpotCol.value[i].set(s.col.r, s.col.g, s.col.b).multiplyScalar(V.spotPower);

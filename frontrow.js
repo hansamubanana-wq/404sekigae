@@ -230,7 +230,7 @@ function frontRowClose(ms = 0) {
 }
 
 // 最前列中央の席の発表: 前振り → 動画 → 締め → 既存の結果表示
-async function announceFrontRow(key, index, total) {
+async function announceFrontRow(key) {
   const s = seats[key];
   const at = await frontRowIntro(key);
   let result = "failed";
@@ -239,8 +239,8 @@ async function announceFrontRow(key, index, total) {
     await sleep(FRONT_ROW.endHold);   // 名前の出た終了画面を少し見せる
     await frontRowClose(1200);        // ゆっくり暗転
     await frontRowOutro(key, at);
-    // 名前はもう動画で出ているので、結果表示は短めの登場で
-    await announce(s, key, index, total, { intro: "plain", fly: "arc" });
+    // 名前はもう動画で出ているので、カメラが席へ寄って札が裏返るだけ
+    await announcePair([{ s, key }], "dive");
   } else {
     // 再生できなかったときは、すぐ既存の結果表示へ
     await frontRowClose(0);
@@ -251,7 +251,7 @@ async function announceFrontRow(key, index, total) {
     letterbox(false);
     spotFocus(null, 500);
     await dolly(0, null, 500);
-    await announce(s, key, index, total);
+    await announcePair([{ s, key }]);
   }
   return result;
 }
