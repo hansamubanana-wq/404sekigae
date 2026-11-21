@@ -18,7 +18,7 @@ const FRONT_ROW = {
   nameAt: 18.5,               // 名前を出し始める秒
   x: .505, y: .475,           // 白紙の中心 (映像の矩形に対する割合)
   maxW: .40,                  // 名前の最大幅 (映像の幅に対する割合)
-  fromLast: 10,               // 発表の順番 (最後から何番目に固定するか)
+  fromLast: 3,                // 発表の順番: 最後の3人の中に入れる (残り3人を見せてから動画)
   startTimeout: 10000,        // これまでに再生が始まらなければ失敗扱い (ミリ秒)
   endHold: 2600,              // 動画が終わったあと、終了画面を見せておく時間 (ミリ秒)
 };
@@ -41,8 +41,8 @@ function frontRowDom() {
   return FR;
 }
 
-// 発表の順番: 最前列中央の席は「最後から fromLast 番目」に固定する (後ろに fromLast - 1 人が残る)
-// 終盤すぎると残りの顔ぶれで誰か分かってしまうので、決まった位置に置く
+// 発表の順番: 最前列中央の席は最後の3人の中に入れる。
+// 「残りの3人」を見せてから動画で誰が最前列の中央かを明かし、残りの2人は短い演出で決める
 function placeFrontRowLate(order) {
   const i = order.indexOf(FRONT_ROW.key);
   if (i < 0) return order;
@@ -236,9 +236,34 @@ function frontRowClose(ms = 0) {
   });
 }
 
-// 最前列中央の席の発表: 前振り → 動画 → 締め → 既存の結果表示
-async function announceFrontRow(key) {
+// 残りの3人の名前を並べて見せる (この中の誰かが最前列の中央)
+async function showRemaining(items) {
+  const n = items.length;
+  const k = Math.min(V.heroK * .5, V.visW * .29 / FACE_W);
+  const gap = FACE_W * k * 1.1;
+  const cards = items.map((it, i) => {
+    const g = pairCard(it.s, "", k);
+    g.position.set((i - (n - 1) / 2) * gap, 0, 0);
+    g.scale.setScalar(.01);
+    return g;
+  });
+  veil(true, 400);
+  letterbox(true);
+  for (let i = 0; i < n; i++) {
+    sfx("pop"); revealBurst(cards[i], items[i].s);
+    tween(450, t => cards[i].scale.setScalar(Math.max(.01, k * t)), ease.back);
+    await sleep(320);
+  }
+  await caption(n > 1 ? `この${n}人のうち、最前列の中央は……` : "最前列の中央は……", 2600);
+  sfx("whoosh", { rate: .7 });
+  await tween(500, t => cards.forEach((g, i) => { g.position.y = t * V.visH; g.rotation.z = t * (i - 1) * .6; }), ease.in);
+  cards.forEach(dropCard);
+}
+
+// 最前列中央の席の発表: 残りの3人を見せる → 前振り → 動画 → 締め → 既存の結果表示 → 残りの2人は短い演出で
+async function announceFrontRow(key, others = []) {
   const s = seats[key];
+  await showRemaining(shuffleArray([{ s, key }, ...others]));
   const at = await frontRowIntro(key);
   let result = "failed";
   try { result = await playFrontRow(s); } catch { result = "failed"; }
@@ -260,5 +285,7 @@ async function announceFrontRow(key) {
     await dolly(0, null, 500);
     await announcePair([{ s, key }]);
   }
+  // 残りの2人は短い演出で一気に
+  if (others.length) await announcePair(others, { intro: "pop", travel: "arc", hold: 600 });
   return result;
 }
