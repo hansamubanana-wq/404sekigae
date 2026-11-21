@@ -157,6 +157,7 @@ async function shuffleSeats() {
 
   if (!worldReady) { renderSheet(); return; }
   sfx("click");
+  frontRowPrime(movable);   // 最前列中央の動画を、ボタン操作の中で再生できる状態にしておく
 
   setBusy(true);
   try {
@@ -178,10 +179,15 @@ async function shuffleSeats() {
       }
       const mode = (evs.find(e => e.mode) || {}).mode;
       const item = j => ({ s: seats[order[j]], key: order[j] });
-      if (mode === "double" && n - i >= 5) {
+      // 最前列中央の席はまとめて発表するモードに入れない (動画の演出があるため)
+      const hasFront = (a, b) => order.slice(a, b).includes(FRONT_ROW.key);
+      if (order[i] === FRONT_ROW.key) {
+        await announceFrontRow(order[i], i + 1, n);
+        i++;
+      } else if (mode === "double" && n - i >= 5 && !hasFront(i, i + 2)) {
         await announceDouble(item(i), item(i + 1), i + 1);
         i += 2;
-      } else if (mode === "speed" && n - i >= 7) {
+      } else if (mode === "speed" && n - i >= 7 && !hasFront(i, i + 4)) {
         await speedRound([0, 1, 2, 3].map(d => item(i + d)), i + 1);
         i += 4;
       } else if (i === n - 1 && n >= 5) {
