@@ -165,8 +165,8 @@ async function shuffleSeats() {
     lastIntro = lastFly = null;
     await showStart(movable);
     updateStatus();
-    const order = placeFrontRowLate(shuffleArray(movable));   // 最前列中央の動画は後ろから10番以内に
-    const rounds = makeRounds(order);                           // 2人ずつの組 (最前列中央だけは1人)
+    const order = placeFrontRowLate(shuffleArray(movable));   // 最前列中央の動画は最後から10番目に固定
+    const rounds = makeRounds(order);                           // 2人ずつの組 (最前列中央と最後の1人だけは1人)
     const R = rounds.length;
     const prog = buildProgram(R);
     resetDecks();

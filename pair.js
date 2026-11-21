@@ -399,15 +399,20 @@ async function announcePair(list, force) {
   await sleep(150);
 }
 
-// 発表の組を作る: 2人ずつ。最前列中央 (動画の席) だけは1人で
+// 発表の組を作る: 1人で発表するのは「最後の1人」と「最前列中央」だけ。ほかは2人ずつ
+// (2人組が余るときだけ、最前列中央か最後の1人の直前に1人の回が入る)
 function makeRounds(order) {
   const rounds = [];
+  if (!order.length) return rounds;
+  const last = order[order.length - 1];
   let buf = [];
-  for (const k of order) {
-    if (k === FRONT_ROW.key) { if (buf.length) rounds.push(buf); buf = []; rounds.push([k]); continue; }
+  const flush = () => { if (buf.length) rounds.push(buf); buf = []; };
+  for (const k of order.slice(0, -1)) {
+    if (k === FRONT_ROW.key) { flush(); rounds.push([k]); continue; }
     buf.push(k);
-    if (buf.length === 2) { rounds.push(buf); buf = []; }
+    if (buf.length === 2) flush();
   }
-  if (buf.length) rounds.push(buf);
+  flush();
+  rounds.push([last]);
   return rounds;
 }

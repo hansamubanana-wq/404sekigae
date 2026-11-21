@@ -9,7 +9,7 @@
      → 締め (終了画面を少し見せて暗転 → 教室に戻って字幕)
      → 既存の結果表示 (名前カードが席へ)
    ・再生に失敗したとき (読み込みエラー・始まらない) だけは、すぐ既存の結果表示へ進む
-   ・発表の順番は、後ろから 10 番以内に回す
+   ・発表の順番は、最後から 10 番目に固定
    ========================================================= */
 
 const FRONT_ROW = {
@@ -18,7 +18,7 @@ const FRONT_ROW = {
   nameAt: 18.5,               // 名前を出し始める秒
   x: .505, y: .475,           // 白紙の中心 (映像の矩形に対する割合)
   maxW: .40,                  // 名前の最大幅 (映像の幅に対する割合)
-  lastWithin: 10,             // 発表の順番を後ろから何番以内にするか
+  fromLast: 10,               // 発表の順番 (最後から何番目に固定するか)
   startTimeout: 10000,        // これまでに再生が始まらなければ失敗扱い (ミリ秒)
   endHold: 2600,              // 動画が終わったあと、終了画面を見せておく時間 (ミリ秒)
 };
@@ -41,14 +41,13 @@ function frontRowDom() {
   return FR;
 }
 
-// 発表の順番: 最前列中央の席は、後ろから lastWithin 番以内に回す (それより前に来たら後ろへ移す)
+// 発表の順番: 最前列中央の席は「最後から fromLast 番目」に固定する (後ろに fromLast - 1 人が残る)
+// 終盤すぎると残りの顔ぶれで誰か分かってしまうので、決まった位置に置く
 function placeFrontRowLate(order) {
   const i = order.indexOf(FRONT_ROW.key);
-  const n = order.length;
-  const first = Math.max(0, n - FRONT_ROW.lastWithin);
-  if (i < 0 || i >= first) return order;
+  if (i < 0) return order;
   order.splice(i, 1);
-  order.splice(first + Math.floor(Math.random() * (n - first)), 0, FRONT_ROW.key);
+  order.splice(Math.max(0, order.length + 1 - FRONT_ROW.fromLast), 0, FRONT_ROW.key);
   return order;
 }
 
