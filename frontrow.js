@@ -238,8 +238,8 @@ async function announceFrontRow(key) {
     await sleep(FRONT_ROW.endHold);   // 名前の出た終了画面を少し見せる
     await frontRowClose(1200);        // ゆっくり暗転
     await frontRowOutro(key, at);
-    // 名前はもう動画で出ているので、カメラが席へ寄って札が裏返るだけ
-    await announcePair([{ s, key }], "dive");
+    // 名前はもう動画で出ているので、カードを出してカメラと一緒に席へ
+    await announcePair([{ s, key }], { intro: "pop", travel: "dive" });
   } else {
     // 再生できなかったときは、すぐ既存の結果表示へ
     await frontRowClose(0);

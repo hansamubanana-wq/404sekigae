@@ -170,7 +170,7 @@ async function shuffleSeats() {
     const R = rounds.length;
     const prog = buildProgram(R);
     resetDecks();
-    resetPairDeck();
+    resetPairDeck(order.length);
     for (let r = 0; r < R; r++) {
       for (const ev of prog[r] || []) {
         if (ev.cut === "halfway") await cutHalfway(hidden.size);
@@ -184,7 +184,7 @@ async function shuffleSeats() {
         letterbox(true);
         await banner(list.length > 1 ? "最後の2人…" : "最後の1人…", 1500, "alert");
         letterbox(false);
-        await announcePair(list, pick(["dive", "rockets", "spot", "meteor", "rise"]));
+        await announcePair(list, { intro: pick(["countdown", "curtain", "warp", "search"]), travel: pick(["dive", "rockets", "meteorDrop", "spot"]) });
       } else {
         await announcePair(list);
       }
