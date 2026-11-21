@@ -207,9 +207,7 @@ async function introCurtain(s) {
   L.position.set(-W / 4, 0, 1.2); Rr.position.set(W / 4, 0, 1.2);
   const val = new THREE.Mesh(new THREE.BoxGeometry(W + 1, .7, .3), new THREE.MeshStandardMaterial({ color: 0xc8901c, metalness: 1, roughness: .3 }));
   val.position.set(0, V.visH / 2 - .1, 1.3);
-  const light = new THREE.PointLight(0xffe0b0, 30, 12, 2);
-  light.position.set(0, 2, 4);
-  V.stage.add(L, Rr, val, light);
+  V.stage.add(L, Rr, val);
   const c = card(), k = V.heroK;
   c.scale.setScalar(k);
   sfx("cloth"); sfx("cloth", { delay: .1 });
@@ -225,7 +223,7 @@ async function introCurtain(s) {
   }, ease.inOut);
   burst(v3(0, 0, .3), [hdr(HEX.gold, 3), hdr(HEX[s.gender], 3)], 160, 4);
   await sleep(500);
-  V.stage.remove(L, Rr, val, light);
+  V.stage.remove(L, Rr, val);
   mat.dispose();
   await sleep(700);
 }
@@ -516,8 +514,8 @@ async function flySpiral(s, key) {
 function makeExtraCard(s, label) {
   const src = V.card;
   const g = new THREE.Group();
-  const cv = makeCanvas(1280, 685);
-  drawFace(cv.getContext("2d"), 1280, 685, s, { label });
+  const cv = makeCanvas(1024, 548);
+  drawFace(cv.getContext("2d"), 1024, 548, s, { label });
   const t = canvasTex(cv);
   const body = new THREE.Mesh(src.body.geometry, src.body.material.clone());
   const rim = new THREE.Mesh(src.rim.geometry, new THREE.MeshBasicMaterial({ color: hdr(HEX[s.gender], 1.7), transparent: true }));
@@ -541,29 +539,77 @@ async function landExtra(g, s, key) {
 /* =========================================================
    カットシーン
    ========================================================= */
+/* ---------- 入れ替えの道具 ----------
+   カットシーンでは、今回すでに決まった2人の席を入れ替える。
+   対象: 固定していない・発表済み・最前列中央 (動画の人) 以外。ランダムに選ぶので公平さは変わらない */
+function pickSwap() {
+  const c = realSeatPositions.filter(k => !locked.has(k) && !hidden.has(k) && k !== FRONT_ROW.key);
+  if (c.length < 2) return null;
+  const a = pick(c);
+  const far = c.filter(k => k !== a).sort((x, y) => {
+    const A = seatXZ(a), X = seatXZ(x), Y = seatXZ(y);
+    return Math.hypot(Y.x - A.x, Y.z - A.z) - Math.hypot(X.x - A.x, X.z - A.z);
+  });
+  return [a, pick(far.slice(0, Math.max(1, Math.ceil(far.length * .5))))];
+}
+// 席のデータを入れ替える (名札は裏返しておいて、あとで表に戻す)
+function swapSeatData(a, b) {
+  [seats[a], seats[b]] = [seats[b], seats[a]];
+  seatLook(a); seatLook(b);
+}
+// 席の名札を表に戻して光らせる
+async function showSeat(key) {
+  const s = seats[key], P = plateLocal(key);
+  seatLook(key);
+  flipPlate(key, false, 600);
+  flashAt(P, hdr(HEX[s.gender], 1.6), 3.2);
+  burst(P, [hdr(HEX[s.gender], 3), hdr(HEX.gold, 3), hdr(0xffffff, 2.5)], 120, 3);
+  floorFocus(key, true).then(() => floorFocus(key, false));
+  sfx("land", { pan: P.x / V.visW }); sfx("chime", { vol: .8, delay: .05 });
+}
+// 2つの席を結ぶ光の弧
+function swapArc(a, b) {
+  const A = plateLocal(a), B = plateLocal(b), C = A.clone().lerp(B, .5).add(v3(0, 2.4, 1));
+  return tween(900, t => {
+    burst(bez(A, C, B, t), hdr(HEX.gold, 3), 3, .4, { life: .7, size: .1, grav: 0 });
+    burst(bez(B, C, A, t), hdr(0xffffff, 2.5), 3, .4, { life: .7, size: .1, grav: 0 });
+  }, ease.inOut);
+}
+async function announceSwap(a, b) {
+  const A = seats[b], B = seats[a];   // 入れ替え後なので、元は逆
+  swapArc(a, b);
+  sfx("phase");
+  letterbox(true);
+  await caption(`${A.name} ⇄ ${B.name}　入れ替わった！`, 2200);
+  letterbox(false);
+}
+
+// 停電: 真っ暗なあいだに、決まった2人の席が入れ替わる
 async function cutBlackout() {
+  const sw = pickSwap();
+  if (!sw) return;
+  const [a, b] = sw;
   const flash = beamMesh(0xfff2cc, 0);
   V.scene.add(flash);
   await tween(250, t => { setPlateDim(1 - t * .9); V.spotPower = 1 - t; }, ease.out);
   bubble("停電！？", v3(0, V.visH * .25, 0), 1300);
+  // 暗いうちに名札を裏返して、こっそり入れ替える
+  flipPlate(a, true, 400); flipPlate(b, true, 400);
+  await sleep(450);
+  swapSeatData(a, b);
   const u = V.floor.material.uniforms;
   const fc = u.uFocusCol.value.clone();
   u.uFocusCol.value.set(1.2, 1.1, .9);
   const from = V.homePos.clone().add(v3(2, 1, 0));
-  const pts = shuffleArray(realSeatPositions).slice(0, 4).map(k => { const p = seatXZ(k); return v3(p.x, 0, p.z); });
+  const pts = [...shuffleArray(realSeatPositions).slice(0, 2), a, b].map(k => { const p = seatXZ(k); return v3(p.x, 0, p.z); });
   flash.material.uniforms.uOpacity.value = .5;
   let cur = pts[0].clone();
-  const un = addFrameHook(() => {
-    aimBeam(flash, from, cur, 1.1);
-    u.uFocus.value.set(cur.x, 0, cur.z, 1);
-  });
+  const un = addFrameHook(() => { aimBeam(flash, from, cur, 1.1); u.uFocus.value.set(cur.x, 0, cur.z, 1); });
   for (let i = 1; i < pts.length; i++) {
-    const a = cur.clone();
-    await tween(700, t => cur.lerpVectors(a, pts[i], t), ease.inOut);
-    await sleep(250);
+    const p0 = cur.clone();
+    await tween(650, t => cur.lerpVectors(p0, pts[i], t), ease.inOut);
+    await sleep(220);
   }
-  bubble("…あ、ついた", v3(0, V.visH * .25, 0), 1000);
-  await sleep(700);
   un();
   V.scene.remove(flash);
   u.uFocus.value.w = 0;
@@ -571,93 +617,110 @@ async function cutBlackout() {
   for (let i = 0; i < 3; i++) { sfx("switch", { vol: .5 }); setPlateDim(1); V.spotPower = 1; await sleep(90); setPlateDim(.1); V.spotPower = 0; await sleep(120); }
   sfx("powerup", { vol: .6 });
   setPlateDim(1); V.spotPower = 1;
-  shake(.1);
-  await sleep(800);
-}
-
-async function cutTour() {
-  letterbox(true);
-  const cap = caption("― ただいまの教室 ―", 4600);
-  sfx("jingle_mode"); sfx("windbig", { vol: .5, rate: .7, delay: .5 });
   await sleep(400);
-  const C = V.lookTarget.clone();
-  const H = V.homePos.clone();
-  const R0 = Math.hypot(H.x - C.x, H.z - C.z), a0 = Math.atan2(H.x - C.x, H.z - C.z), h0 = H.y;
-  const q = new THREE.Quaternion();
-  let t = 0;
-  const dur = 6.5;
-  V.billboard = true;
-  await new Promise(res => {
-    V.camRig = dt => {
-      t = Math.min(1, t + dt / dur);
-      const e = ease.inOut(t);
-      const a = a0 + e * Math.PI * 2;
-      const r = R0 * (1 - .32 * Math.sin(Math.PI * e));
-      const y = h0 * (1 - .55 * Math.sin(Math.PI * e));
-      V.camera.position.set(C.x + Math.sin(a) * r, y, C.z + Math.cos(a) * r);
-      V.camera.lookAt(C);
-      if (t > .85) {
-        q.copy(V.camera.quaternion).slerp(V.homeQuat, (t - .85) / .15);
-        V.camera.quaternion.copy(q);
-        V.camera.position.lerp(H, (t - .85) / .15);
-      }
-      if (t >= 1) { V.camRig = null; res(); }
-    };
-  });
-  V.billboard = false;
-  for (const key in V.seat) V.seat[key].pivot.quaternion.copy(V.homeQuat);
-  letterbox(false);
-  await cap;
+  bubble("…あれ？", plateLocal(a).add(v3(0, .8, 0)), 1000);
+  showSeat(a);
+  await sleep(350);
+  showSeat(b);
+  await sleep(500);
+  await announceSwap(a, b);
 }
 
+// 名札どろぼう: 猫が2匹、決まった席から名札をくわえて走り去り、お互いの席に置いていく
 async function cutCats() {
-  const W = V.visW, H = V.visH;
-  const cats = [];
-  const n = 6;
-  const furs = [0xf2a541, 0x9aa3ad, 0x3a3a3a, 0xf6efe4, 0xc9793a, 0xf2a541];
-  for (let i = 0; i < n; i++) {
-    const c = stageActor(buildCat(furs[i]));
-    c.scale.setScalar(rand(.9, 1.4));
-    c.position.set(-W / 2 - 2 - i * 1.5, -H * .42 + rand(-.2, .4), rand(-3, 0));
-    cats.push(c);
-  }
-  for (let i = 0; i < 22; i++) sfx("step", { vol: .45, delay: i * .15 / TIME_SCALE, rate: 1.5, vary: .3 });
-  bubble("ニャー", v3(-W * .3, 0, 0), 1000);
-  const un = addFrameHook((dt, t) => cats.forEach((c, i) => {
-    c.position.x += dt * (W + 8) / 3.2;
-  }));
-  await sleep(1200);
-  bubble("ニャニャ", v3(W * .1, -H * .05, 0), 900);
-  await sleep(1300);
-  bubble("…なんで猫？", v3(0, H * .25, 0), 1000);
-  await sleep(1300);
-  un();
-  cats.forEach(c => c.userData.remove());
+  const sw = pickSwap();
+  if (!sw) return;
+  const [a, b] = sw;
+  const W = V.visW, H = V.visH, CS = 1.1;
+  const S = { [a]: seats[a], [b]: seats[b] };
+  for (let i = 0; i < 30; i++) sfx("step", { vol: .45, delay: i * .14 / TIME_SCALE, rate: 1.5, vary: .3 });
+  bubble("ニャー", v3(0, -H * .2, 0), 900);
+  const thief = async (from, to, side, fur) => {
+    const cat = stageActor(buildCat(fur));
+    const dir = d => cat.scale.set(CS * d, CS, CS);
+    const Pf = plateLocal(from), Pt = plateLocal(to);
+    const off = d => v3(d * .95 * CS, .62 * CS, .25);
+    const start = v3(side * (W / 2 + 2), -H * .35, .2);
+    const atF = Pf.clone().sub(off(-side)).add(v3(0, 0, -.25));
+    cat.position.copy(start); dir(-side);
+    await tween(1300, t => { cat.position.lerpVectors(start, atF, t); cat.position.y += Math.abs(Math.sin(t * Math.PI * 7)) * .08; }, ease.inOut);
+    // 名札をくわえる (席の札は裏返る)
+    const g = pairCard(S[from], "", 1);
+    g.position.copy(Pf);
+    flipPlate(from, true, 350);
+    sfx("pop");
+    bubble("ニャッ", cat.position.clone().add(v3(0, 1.3 * CS, 0)), 700);
+    await sleep(350);
+    const d = Pt.x > atF.x ? 1 : -1;
+    dir(d);
+    const atT = Pt.clone().sub(off(d)).add(v3(0, 0, -.25));
+    await tween(1600, t => {
+      cat.position.copy(bez(atF, atF.clone().lerp(atT, .5).add(v3(0, -1.2, 2)), atT, t));
+      cat.position.y += Math.abs(Math.sin(t * Math.PI * 9)) * .08;
+      g.position.copy(cat.position).add(off(d));
+      g.rotation.z = Math.sin(t * 30) * .1;
+    }, ease.inOut);
+    g.rotation.z = 0;
+    await tween(200, t => g.position.lerp(Pt, t), ease.out);
+    dropCard(g);
+    const exit = v3(atT.x + d * (W + 4), atT.y, atT.z);
+    tween(1100, t => cat.position.lerpVectors(atT, exit, t), ease.in).then(() => cat.userData.remove());
+  };
+  await Promise.all([thief(a, b, -1, 0xf2a541), sleep(300).then(() => thief(b, a, 1, 0x3a3a3a))]);
+  swapSeatData(a, b);
+  showSeat(a);
+  await sleep(300);
+  showSeat(b);
+  await sleep(400);
+  await announceSwap(a, b);
 }
 
+// UFO の誘拐: 2機の UFO が決まった2人の名札を吸い上げ、入れ替えて降ろす
 async function cutUfoFleet() {
-  const W = V.visW, H = V.visH;
-  const ufos = [0, 1, 2].map(() => { const u = buildUfo(); V.stage.add(u.g); return u; });
-  const off = [v3(0, 0, 0), v3(-1.6, .5, -1.5), v3(1.6, .5, -1.5)];
+  const sw = pickSwap();
+  if (!sw) return;
+  const [a, b] = sw;
+  const H = V.visH;
+  const S = { [a]: seats[a], [b]: seats[b] };
   bubble("！？", v3(0, H * .3, 0), 800);
   const hum = sfx("ufo", { loop: true, vol: .6, rate: .8 });
-  let beamOn = false;
-  await tween(4200, t => {
-    const x = lerp(-W * .8 - 3, W * .8 + 3, t);
-    ufos.forEach((u, i) => {
-      u.g.position.copy(v3(x, H * .28, -2).add(off[i]));
-      if (i === 0) {
-        const on = t > .35 && t < .6;
-        if (on !== beamOn) { u.beam.visible = on; beamOn = on; }
-        u.beam.material.uniforms.uOpacity.value = .7;
-        u.beam.scale.set(1.2, H * .9, 1.2);
-      }
-    });
-  }, ease.linear);
+  dolly(-1.2, null, 700);
+  const abduct = async (from, to, side) => {
+    const u = buildUfo();
+    V.stage.add(u.g);
+    const Pf = plateLocal(from), Pt = plateLocal(to);
+    const above = k => plateLocal(k).add(v3(0, 2.4, 0));
+    const start = v3(side * (V.visW * .7 + 2), H * .45, -2);
+    u.g.position.copy(start);
+    await tween(1000, t => u.g.position.lerpVectors(start, above(from), t), ease.inOut);
+    u.beam.visible = true; u.beam.material.uniforms.uOpacity.value = .85;
+    u.beam.scale.set(.9, 2.4, .9);
+    sfx("beam");
+    const g = pairCard(S[from], "", 1);
+    g.position.copy(Pf);
+    flipPlate(from, true, 350);
+    const top = above(from).add(v3(0, -.2, 0));
+    await tween(800, t => { g.position.lerpVectors(Pf, top, t); g.scale.setScalar(1 - t * .9); g.rotation.z = Math.sin(t * 20) * .2; }, ease.in);
+    g.visible = false; u.beam.visible = false;
+    const p0 = u.g.position.clone();
+    await tween(1200, t => u.g.position.copy(bez(p0, p0.clone().lerp(above(to), .5).add(v3(0, 1.8, 0)), above(to), t)), ease.inOut);
+    u.beam.visible = true; sfx("beam");
+    g.visible = true; g.rotation.set(0, 0, 0);
+    const st = above(to).add(v3(0, -.2, 0));
+    await tween(700, t => { g.position.lerpVectors(st, Pt, t); g.scale.setScalar(lerp(.1, 1, t)); }, ease.out);
+    u.beam.visible = false;
+    dropCard(g);
+    const p1 = u.g.position.clone();
+    tween(900, t => u.g.position.copy(p1).add(v3(t * 3 * side, t * (H + 4), 0)), ease.in).then(() => { u.unhook(); V.stage.remove(u.g); });
+  };
+  await Promise.all([abduct(a, b, -1), sleep(250).then(() => abduct(b, a, 1))]);
   if (hum) hum.stop(.6);
-  ufos.forEach(u => { u.unhook(); V.stage.remove(u.g); });
-  bubble("…なんだったんだ", v3(0, H * .2, 0), 1200);
-  await sleep(1300);
+  swapSeatData(a, b);
+  showSeat(a);
+  await sleep(300);
+  showSeat(b);
+  await dolly(0, null, 600);
+  await announceSwap(a, b);
 }
 
 async function cutHalfway(remain) {
@@ -702,7 +765,8 @@ function endTension() {
   }, ease.inOut);
 }
 
-const CUTS = { blackout: cutBlackout, tour: cutTour, cats: cutCats, ufos: cutUfoFleet };
+// どれも「すでに決まった2人の席が入れ替わる」カットシーン
+const CUTS = { blackout: cutBlackout, cats: cutCats, ufos: cutUfoFleet };
 
 /* =========================================================
    進行表: いつカットシーンや特別モードを入れるか

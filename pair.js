@@ -36,7 +36,7 @@ function camHome(ms = 700) {
 function pairCard(s, label, k) {
   const src = V.card;
   const g = new THREE.Group();
-  const cv = makeCanvas(1280, 685), ctx = cv.getContext("2d");
+  const cv = makeCanvas(1024, 548), ctx = cv.getContext("2d");
   const tex = canvasTex(cv);
   const body = new THREE.Mesh(src.body.geometry, src.body.material.clone());
   const rim = new THREE.Mesh(src.rim.geometry, new THREE.MeshBasicMaterial({ transparent: true }));
@@ -47,7 +47,7 @@ function pairCard(s, label, k) {
   back.position.z = -.034;
   g.add(body, rim, front, back);
   g.userData.setFace = (st, o = {}) => {
-    drawFace(ctx, 1280, 685, st, { label, ...o });
+    drawFace(ctx, 1024, 548, st, { label, ...o });
     tex.needsUpdate = true;
     rim.material.color.copy(hdr(HEX[st.gender], 1.7));
   };
@@ -231,9 +231,7 @@ const INTRO2 = {
     const L = new THREE.Mesh(new THREE.PlaneGeometry(W / 2 + .4, H), mat), Rr = L.clone();
     const val = new THREE.Mesh(new THREE.BoxGeometry(W + 1, .7, .3), new THREE.MeshStandardMaterial({ color: 0xc8901c, metalness: 1, roughness: .3 }));
     val.position.set(0, V.visH / 2 - .1, 1.3);
-    const light = new THREE.PointLight(0xffe0b0, 30, 12, 2);
-    light.position.set(0, 2, 4);
-    V.stage.add(L, Rr, val, light);
+    V.stage.add(L, Rr, val);
     L.position.set(-W * .8, 0, 1.2); Rr.position.set(W * .8, 0, 1.2);
     sfx("cloth"); sfx("cloth", { delay: .1 });
     await tween(450, t => { L.position.x = lerp(-W * .8, -W / 4, t); Rr.position.x = lerp(W * .8, W / 4, t); }, ease.out);
@@ -247,7 +245,7 @@ const INTRO2 = {
       L.scale.x = Rr.scale.x = 1 - t * .5;
     }, ease.inOut);
     cards.forEach((g, i) => revealBurst(g, list[i].s));
-    V.stage.remove(L, Rr, val, light);
+    V.stage.remove(L, Rr, val);
     L.geometry.dispose(); mat.dispose(); val.geometry.dispose(); val.material.dispose();
   },
 
@@ -762,4 +760,43 @@ function makeRounds(order) {
   flush();
   rounds.push([last]);
   return rounds;
+}
+
+/* ---------------- 起動時の準備 ----------------
+   演出で初めて使う物が出た瞬間に、描画プログラムの準備で一瞬止まる (カクつく) のを防ぐため、
+   起動時に一度ずつ作って準備させ、見えない状態で残しておく */
+function warmUpShaders() {
+  const g = new THREE.Group();
+  V.stage.add(g);
+  const ufo = buildUfo();
+  ufo.beam.visible = true;
+  ufo.unhook();
+  g.add(ufo.g, buildRocket(), buildCat(), buildClock(), buildGust(V.visW, V.visH), buildZs());
+  const glass = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), new THREE.ShaderMaterial({
+    vertexShader: GLASS_VERT, fragmentShader: GLASS_FRAG,
+    uniforms: { uColor: { value: new THREE.Color(1, 1, 1) }, uOpacity: { value: 1 } },
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  }));
+  const lg = new THREE.BufferGeometry();
+  lg.setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3));
+  const lines = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+  const confetti = new THREE.InstancedMesh(new THREE.PlaneGeometry(.1, .1), new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, toneMapped: false }), 2);
+  const balls = new THREE.InstancedMesh(new THREE.SphereGeometry(.1, 8, 6), new THREE.MeshPhysicalMaterial({ metalness: .15, roughness: .15, clearcoat: 1 }), 2);
+  [confetti, balls].forEach(m => { m.setColorAt(0, new THREE.Color(1, 1, 1)); m.setColorAt(1, new THREE.Color(1, 0, 0)); });
+  const curtain = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshStandardMaterial({ map: V.tex.glow, roughness: .7 }));
+  const ring = new THREE.Mesh(new THREE.RingGeometry(.8, 1, 16), new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+  const beam = beamMesh(0xffffff, .1);
+  const gift = new THREE.Mesh(new THREE.TorusKnotGeometry(.1, .03, 16, 4), new THREE.MeshStandardMaterial({ color: 0xfbbf24, roughness: .3, metalness: .8, emissive: 0x553300, emissiveIntensity: .4 }));
+  g.add(glass, lines, confetti, balls, curtain, ring, beam, gift);
+  const card = pairCard(studentsOriginal[0], "1人目", 1);
+  const pv = V.particles.pts.visible, cv = V.card.obj.visible;
+  V.particles.pts.visible = true;
+  V.card.obj.visible = true;
+  try { V.renderer.compile(V.scene, V.camera); V.composer.render(); } catch {}
+  V.particles.pts.visible = pv;
+  V.card.obj.visible = cv;
+  // 片付けずに見えない状態で残す。素材を捨てると描画プログラムも捨てられ、
+  // 次に同じ演出が出たときに作り直しで止まるため
+  g.visible = false;
+  card.visible = false;
 }

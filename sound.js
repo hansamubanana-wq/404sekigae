@@ -12,7 +12,8 @@ try { SND.on = localStorage.getItem("404sound") !== "off"; } catch {}
 // iPad / iPhone のマナーモードでも鳴らす (Safari 16.4+)
 try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch {}
 
-function soundUnlock() {
+// 音の準備 (起動中に呼ぶ)。音を鳴らす許可はまだないが、読み込みと変換はここで済ませておく
+function soundInit() {
   if (!SND.ctx) {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
@@ -25,7 +26,13 @@ function soundUnlock() {
     SND.master.connect(comp).connect(SND.ctx.destination);
     soundLoad();
   }
-  if (SND.ctx.state !== "running") SND.ctx.resume().catch(() => {});
+  return SND.loading || Promise.resolve();
+}
+
+// 最初のタップで鳴らせるようにする (ブラウザの決まり)
+function soundUnlock() {
+  soundInit();
+  if (SND.ctx && SND.ctx.state !== "running") SND.ctx.resume().catch(() => {});
 }
 
 function soundLoad() {

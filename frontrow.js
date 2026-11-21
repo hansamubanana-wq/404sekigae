@@ -51,6 +51,14 @@ function placeFrontRowLate(order) {
   return order;
 }
 
+// 起動時に動画の読み込みを始めておく
+function frontRowPreload() {
+  const v = frontRowDom().video;
+  if (!v.getAttribute("src")) v.src = FRONT_ROW.src;
+  v.preload = "auto";
+  try { v.load(); } catch {}
+}
+
 // 席替えスタートのボタンを押した瞬間 (ユーザー操作の中) に呼ぶ。
 // iPad / iPhone では、操作の中で一度 play() しておかないと、あとで音付きで再生できないため
 function frontRowPrime(movable) {

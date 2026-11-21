@@ -200,7 +200,7 @@ float noise(vec3 x){
   return mix(mix(mix(hash(i),hash(i+vec3(1,0,0)),f.x), mix(hash(i+vec3(0,1,0)),hash(i+vec3(1,1,0)),f.x), f.y),
              mix(mix(hash(i+vec3(0,0,1)),hash(i+vec3(1,0,1)),f.x), mix(hash(i+vec3(0,1,1)),hash(i+vec3(1,1,1)),f.x), f.y), f.z);
 }
-float fbm(vec3 p){ float a = .5, s = 0.0; for (int i = 0; i < 5; i++){ s += a*noise(p); p *= 2.03; a *= .5; } return s; }
+float fbm(vec3 p){ float a = .5, s = 0.0; for (int i = 0; i < 4; i++){ s += a*noise(p); p *= 2.03; a *= .5; } return s; }
 `;
 
 const WORLD_VERT = `
@@ -609,7 +609,7 @@ function buildStage() {
   const rim = new THREE.Mesh(new V.RoundedBox(FACE_W + .14, FACE_H + .14, .03, 4, .09),
     new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true }));
   rim.position.z = 0;   // 本体の厚みの内側に置く (裏から見たとき枠が全面を覆わないように)
-  const heroC = makeCanvas(1280, 685);
+  const heroC = makeCanvas(1024, 548);
   V.heroCanvas = heroC;
   V.tex.hero = canvasTex(heroC);
   const front = new THREE.Mesh(new THREE.PlaneGeometry(FACE_W, FACE_H), new THREE.MeshBasicMaterial({ map: V.tex.hero, transparent: true, color: new THREE.Color(.84, .84, .84) }));
@@ -636,7 +636,7 @@ function setCardOpacity(a) {
 }
 
 function drawHero(s, o = {}) {
-  drawFace(V.heroCanvas.getContext("2d"), 1280, 685, s, o);
+  drawFace(V.heroCanvas.getContext("2d"), 1024, 548, s, o);
   V.tex.hero.needsUpdate = true;
 }
 
@@ -752,6 +752,7 @@ function buildSparks() {
 
 // at: ステージ座標。color: THREE.Color (明るさ 1 以上で光る)
 function burst(at, color, n = 120, speed = 3, o = {}) {
+  V.sparks.active = true;
   const S = V.sparks, pos = S.geo.attributes.position.array, col = S.geo.attributes.aColor.array;
   for (let k = 0; k < n; k++) {
     const i = S.next; S.next = (S.next + 1) % S.N;
@@ -770,10 +771,14 @@ function burst(at, color, n = 120, speed = 3, o = {}) {
 }
 
 function updateSparks(dt) {
-  const S = V.sparks, pos = S.geo.attributes.position.array, al = S.geo.attributes.aAlpha.array, sz = S.geo.attributes.aSize.array;
+  const S = V.sparks;
+  if (!S.active) return;   // 火花が1つも出ていないときは何もしない
+  const pos = S.geo.attributes.position.array, al = S.geo.attributes.aAlpha.array, sz = S.geo.attributes.aSize.array;
   const drag = Math.pow(.25, dt);
+  let alive = 0;
   for (let i = 0; i < S.N; i++) {
     if (S.life[i] <= 0) { al[i] = 0; continue; }
+    alive++;
     S.life[i] -= dt;
     S.vel[i * 3] *= drag; S.vel[i * 3 + 1] = S.vel[i * 3 + 1] * drag - S.grav[i] * dt; S.vel[i * 3 + 2] *= drag;
     pos[i * 3] += S.vel[i * 3] * dt; pos[i * 3 + 1] += S.vel[i * 3 + 1] * dt; pos[i * 3 + 2] += S.vel[i * 3 + 2] * dt;
@@ -784,6 +789,7 @@ function updateSparks(dt) {
   S.geo.attributes.position.needsUpdate = true;
   S.geo.attributes.aAlpha.needsUpdate = true;
   S.geo.attributes.aSize.needsUpdate = true;
+  if (!alive) S.active = false;
 }
 
 /* ---------------- 配置 (画面サイズに合わせる) ---------------- */
@@ -894,18 +900,21 @@ function tapPulse(key) {
 /* ---------------- 毎フレーム ---------------- */
 function frame() {
   if (V.renderHold) { V.clock.getDelta(); return; }   // 動画の再生中は3Dの描画を止める
-  const dt = Math.min(V.clock.getDelta(), .05) * TIME_SCALE;
+  const rawDt = V.clock.getDelta();
+  const dt = Math.min(rawDt, .05) * TIME_SCALE;
   V.time = (V.time || 0) + dt;
   const t = V.time;
   V.uniforms.uTime.value = t;
 
-  // 自動で画質を下げる (重い端末用)
-  if (V.frames < 240) {
-    V.frames++;
-    if (V.frames > 30 && dt / TIME_SCALE > .026) V.slowFrames++;
-    if (V.frames === 240 && V.slowFrames > 120 && V.pixelRatio > 1) {
-      V.pixelRatio = 1;
-      V.renderer.setPixelRatio(1);
+  // 重いときは解像度を少しずつ下げる (2秒ごとに平均を見る。ずっと監視)
+  V.perfT = (V.perfT || 0) + Math.min(rawDt, .2);
+  V.perfN = (V.perfN || 0) + 1;
+  if (V.perfT > 2) {
+    const avg = V.perfT / V.perfN;
+    V.perfT = V.perfN = 0;
+    if (avg > .021 && V.pixelRatio > 1) {
+      V.pixelRatio = Math.max(1, +(V.pixelRatio - .25).toFixed(2));
+      V.renderer.setPixelRatio(V.pixelRatio);
       layoutWorld();
     }
   }
