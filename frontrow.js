@@ -3,8 +3,13 @@
    最前列中央の席の特別演出
    完成動画 media/the_front_row.mp4 (20.000秒 / 1280×720 / 24fps) を流し、
    18.5秒から白紙の中央に当選者の名前を重ねて、終了画面まで残す。
-   ・名前は再生位置で決める: 18.5秒以上なら表示、未満 (シーク・最初から) なら隠す
-   ・スキップ / 再生失敗のときは、そのまま既存の結果表示 (announce) へ進む
+   流れ:
+     前振り (黒帯・照明が落ちて席にライトとカメラが寄る・字幕・丸く暗転)
+     → 動画 (操作 UI なし・スキップなし・最後まで流す)
+     → 締め (終了画面を少し見せて暗転 → 教室に戻って字幕)
+     → 既存の結果表示 (名前カードが席へ)
+   ・再生に失敗したとき (読み込みエラー・始まらない) だけは、すぐ既存の結果表示へ進む
+   ・発表の順番は、後ろから 10 番以内に回す
    ========================================================= */
 
 const FRONT_ROW = {
@@ -13,8 +18,9 @@ const FRONT_ROW = {
   nameAt: 18.5,               // 名前を出し始める秒
   x: .505, y: .475,           // 白紙の中心 (映像の矩形に対する割合)
   maxW: .40,                  // 名前の最大幅 (映像の幅に対する割合)
+  lastWithin: 10,             // 発表の順番を後ろから何番以内にするか
   startTimeout: 10000,        // これまでに再生が始まらなければ失敗扱い (ミリ秒)
-  autoNext: 6000,             // 終了画面のあと、自動で結果へ進むまで (ミリ秒)
+  endHold: 2600,              // 動画が終わったあと、終了画面を見せておく時間 (ミリ秒)
 };
 
 let FR = null;
@@ -25,29 +31,25 @@ function frontRowDom() {
   root.className = "frontrow";
   root.hidden = true;
   root.innerHTML = `
-    <video class="fr-video" playsinline webkit-playsinline preload="none" disablepictureinpicture></video>
-    <div class="fr-name" aria-live="polite"></div>
-    <div class="fr-bar">
-      <button class="fr-btn fr-play" aria-label="再生・一時停止">
-        <svg class="i-pause" viewBox="0 0 24 24"><path d="M7 5h3v14H7zM14 5h3v14h-3z"/></svg>
-        <svg class="i-play" viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z"/></svg>
-      </button>
-      <button class="fr-btn fr-restart" aria-label="最初から">
-        <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 3v5h5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>
-      <input class="fr-seek" type="range" min="0" max="20" step="0.01" value="0" aria-label="再生位置" />
-      <span class="fr-time">0:00 / 0:20</span>
-      <button class="fr-btn fr-sound" aria-label="音を出す" hidden>音を出す</button>
-      <button class="fr-text fr-skip">スキップ</button>
-      <button class="fr-text fr-next" hidden>結果へ</button>
-    </div>`;
-  document.body.appendChild(root);
-  const q = s => root.querySelector(s);
-  FR = {
-    root, video: q(".fr-video"), name: q(".fr-name"), seek: q(".fr-seek"), time: q(".fr-time"),
-    play: q(".fr-play"), restart: q(".fr-restart"), sound: q(".fr-sound"), skip: q(".fr-skip"), next: q(".fr-next"),
-  };
+    <video class="fr-video" playsinline webkit-playsinline preload="none" disablepictureinpicture disableremoteplayback></video>
+    <div class="fr-name" aria-live="polite"></div>`;
+  const iris = document.createElement("div");
+  iris.className = "fr-iris";
+  iris.hidden = true;
+  document.body.append(root, iris);
+  FR = { root, iris, video: root.querySelector(".fr-video"), name: root.querySelector(".fr-name") };
   return FR;
+}
+
+// 発表の順番: 最前列中央の席は、後ろから lastWithin 番以内に回す (それより前に来たら後ろへ移す)
+function placeFrontRowLate(order) {
+  const i = order.indexOf(FRONT_ROW.key);
+  const n = order.length;
+  const first = Math.max(0, n - FRONT_ROW.lastWithin);
+  if (i < 0 || i >= first) return order;
+  order.splice(i, 1);
+  order.splice(first + Math.floor(Math.random() * (n - first)), 0, FRONT_ROW.key);
+  return order;
 }
 
 // 席替えスタートのボタンを押した瞬間 (ユーザー操作の中) に呼ぶ。
@@ -88,119 +90,120 @@ function frontRowLayoutName() {
   el.style.maxWidth = `${maxW}px`;
 }
 
-const fmtTime = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
-
 // 再生位置から名前の表示を決める (18.5秒未満なら必ず隠す)
 function frontRowSync(t) {
   if (!FR) return;
   FR.name.classList.toggle("on", t >= FRONT_ROW.nameAt - .001);
 }
 
-// 戻り値: "done" (最後まで見た / 結果へ) | "skipped" | "failed"
+/* ---------- 丸くすぼまる暗転 (アイリス) ---------- */
+// r: 穴の半径 (画面の対角線に対する割合。0 で真っ暗、1 以上で全部見える)
+function irisSet(r, cx, cy) {
+  const { iris } = FR;
+  const R = Math.hypot(innerWidth, innerHeight) * r;
+  iris.style.background = `radial-gradient(circle at ${cx}px ${cy}px, transparent ${R}px, #000 ${R + 1.5}px)`;
+}
+function irisTo(r0, r1, ms, at, e = ease.inOut) {
+  const { iris } = FR;
+  iris.hidden = false;
+  return tween(ms, t => irisSet(lerp(r0, r1, t), at.x, at.y), e).then(() => { if (r1 >= 1) iris.hidden = true; });
+}
+
+/* ---------- 前振り ---------- */
+async function frontRowIntro(key) {
+  const o = V.seat[key];
+  letterbox(true);
+  sfx("suspense", { vol: .9 });
+  spotFocus(key, 1200);
+  dolly(.42, key, 3200);
+  const d0 = V.uniforms.uDim.value;
+  tween(1200, t => { V.uniforms.uDim.value = lerp(d0, .5, t); setPlateDim(lerp(1, .55, t)); }, ease.inOut);
+  // 席の名札だけ明るいまま、金の枠が鼓動に合わせて光る
+  o.frame.visible = true;
+  const unhook = addFrameHook((dt, t) => {
+    o.front.material.color.setScalar(.86); o.back.material.color.setScalar(.95);
+    const beat = Math.pow(Math.max(0, Math.sin(t * 5.2)), 12);
+    o.pivot.scale.setScalar(1 + beat * .12);
+    o.frame.material.color.copy(hdr(HEX.gold, .8 + beat * 2.2));
+  });
+  await sleep(600);
+  const cap = caption("最前列の中央は……", 2700);
+  for (let i = 0; i < 3; i++) {
+    sfx("heart", { vol: 1, rate: .7 }); sfx("heart", { vol: .7, rate: .7, delay: .18 });
+    shake(.04);
+    await sleep(820);
+  }
+  await cap;
+  // 席の位置に向かって丸く暗転
+  const p = toScreen(plateLocal(key));
+  sfx("down", { vol: .8 });
+  await irisTo(1.05, 0, 1100, p, ease.in);
+  unhook();
+  o.pivot.scale.setScalar(1);
+  o.frame.visible = locked.has(key);
+  return p;
+}
+
+/* ---------- 締め (教室に戻る) ---------- */
+async function frontRowOutro(key, at) {
+  V.renderHold = false;
+  setPlateDim(1);
+  V.uniforms.uDim.value = 1;
+  letterbox(true);
+  await sleep(250);
+  await irisTo(0, 1.05, 1300, toScreen(plateLocal(key)) || at, ease.out);
+  await caption("― 最前列 中央 ―", 1700);
+  // 寄っていたカメラとライトを元に戻してから結果表示へ (寄ったままだと名前カードが大写しになる)
+  letterbox(false);
+  spotFocus(null, 900);
+  await dolly(0, null, 1000);
+}
+
+/* ---------- 動画 (操作なし・最後まで) ---------- */
+// 戻り値: "done" (最後まで流れた) | "failed"
 function playFrontRow(student) {
   const d = frontRowDom(), v = d.video;
   return new Promise(resolve => {
-    let finished = false, started = false, autoTimer = 0, startTimer = 0, raf = 0, vfc = 0, seekingByUser = false;
+    let finished = false, started = false, startTimer = 0, raf = 0, vfc = 0;
     const on = [];
     const listen = (el, ev, fn) => { el.addEventListener(ev, fn); on.push([el, ev, fn]); };
 
     const finish = result => {
       if (finished) return;
       finished = true;
-      clearTimeout(autoTimer); clearTimeout(startTimer); cancelAnimationFrame(raf);
+      clearTimeout(startTimer); cancelAnimationFrame(raf);
       if (vfc && v.cancelVideoFrameCallback) v.cancelVideoFrameCallback(vfc);
       on.forEach(([el, ev, fn]) => el.removeEventListener(ev, fn));
       try { v.pause(); } catch {}
-      d.root.classList.remove("on");
-      d.name.classList.remove("on");
-      setTimeout(() => { d.root.hidden = true; }, 450);
-      if (typeof V === "object" && V) V.renderHold = false;
       resolve(result);
     };
 
-    // 準備
     d.name.textContent = student.name;
     d.name.classList.remove("on");
-    d.next.hidden = true;
-    d.sound.hidden = true;
-    d.root.classList.remove("ended", "paused");
+    d.root.classList.remove("on", "out");
     d.root.hidden = false;
-    requestAnimationFrame(() => d.root.classList.add("on"));
-    if (typeof V === "object" && V) V.renderHold = true;   // 裏の3Dを止めて動画を滑らかに
+    V.renderHold = true;   // 裏の3Dを止めて動画を滑らかに
     frontRowLayoutName();
 
-    const updateUi = () => {
-      const t = v.currentTime || 0, dur = v.duration || 20;
-      if (!seekingByUser) d.seek.value = t;
-      d.seek.max = dur;
-      d.time.textContent = `${fmtTime(t)} / ${fmtTime(dur)}`;
-      d.root.classList.toggle("paused", v.paused);
-    };
-    // 名前の表示は「実際に画面に出たコマの時刻」で決める (コマ単位で正確)。
-    // 使えないブラウザでは再生位置 (currentTime) で決める。2つを混ぜると境目でちらつくので、どちらか一方だけ
+    // 名前の表示は「実際に画面に出たコマの時刻」で決める (コマ単位で正確)。使えないブラウザでは currentTime
     const hasVfc = !!v.requestVideoFrameCallback;
-    const tick = () => {
-      if (!hasVfc) frontRowSync(v.currentTime || 0);
-      updateUi();
-      raf = requestAnimationFrame(tick);
-    };
+    const tick = () => { if (!hasVfc) frontRowSync(v.currentTime || 0); raf = requestAnimationFrame(tick); };
     raf = requestAnimationFrame(tick);
     if (hasVfc) {
-      const onFrame = (now, meta) => {
-        if (!v.seeking) frontRowSync(meta.mediaTime);   // シーク中に届いた古いコマは無視
-        vfc = v.requestVideoFrameCallback(onFrame);
-      };
+      const onFrame = (now, meta) => { if (!v.seeking) frontRowSync(meta.mediaTime); vfc = v.requestVideoFrameCallback(onFrame); };
       vfc = v.requestVideoFrameCallback(onFrame);
     }
+    ["seeking", "seeked"].forEach(ev => listen(v, ev, () => frontRowSync(v.currentTime)));
 
-    // 失敗 → 既存の結果表示へ
     listen(v, "error", () => finish("failed"));
     startTimer = setTimeout(() => { if (!started) finish("failed"); }, FRONT_ROW.startTimeout);
-    listen(v, "playing", () => { started = true; });
-
-    // 名前の表示を再生位置に合わせる
-    // シークした瞬間は移動先の位置で決める (18.5秒より前に戻ったらすぐ隠す)
-    ["seeking", "seeked"].forEach(ev => listen(v, ev, () => { frontRowSync(v.currentTime); updateUi(); }));
-    ["timeupdate", "play", "pause"].forEach(ev => listen(v, ev, () => { if (!hasVfc) frontRowSync(v.currentTime); updateUi(); }));
+    // 映像が出始めたら、黒から浮かび上がらせる
+    listen(v, "playing", () => { started = true; d.root.classList.add("on"); });
     listen(v, "loadedmetadata", frontRowLayoutName);
     listen(window, "resize", frontRowLayoutName);
     listen(window, "orientationchange", () => setTimeout(frontRowLayoutName, 300));
+    listen(v, "ended", () => { frontRowSync(v.duration || 20); finish("done"); });
 
-    // 終了画面: 名前を残したまま「結果へ」を出し、少し待って自動で進む
-    listen(v, "ended", () => {
-      frontRowSync(v.duration || 20);
-      d.root.classList.add("ended");
-      d.next.hidden = false;
-      clearTimeout(autoTimer);
-      autoTimer = setTimeout(() => finish("done"), FRONT_ROW.autoNext);
-    });
-    listen(v, "play", () => { clearTimeout(autoTimer); d.root.classList.remove("ended"); d.next.hidden = true; });
-
-    // 操作バー: 触ったら数秒だけ出す (再生中は字幕の邪魔をしない)
-    let uiTimer = 0;
-    const showUi = () => {
-      d.root.classList.add("ui");
-      clearTimeout(uiTimer);
-      uiTimer = setTimeout(() => d.root.classList.remove("ui"), 2800);
-    };
-    listen(d.root, "pointermove", showUi);
-    listen(d.root, "pointerdown", showUi);
-    showUi();
-
-    // 操作
-    listen(d.play, "click", () => { v.paused || v.ended ? v.play().catch(() => {}) : v.pause(); });
-    listen(d.restart, "click", () => { v.currentTime = 0; frontRowSync(0); v.play().catch(() => {}); });
-    listen(d.seek, "input", () => { seekingByUser = true; clearTimeout(autoTimer); v.currentTime = +d.seek.value; frontRowSync(+d.seek.value); });
-    listen(d.seek, "change", () => { seekingByUser = false; });
-    listen(d.sound, "click", () => { v.muted = false; d.sound.hidden = true; });
-    listen(d.skip, "click", () => finish("skipped"));
-    listen(d.next, "click", () => finish("done"));
-    listen(window, "keydown", e => {
-      if (e.key === "Escape") finish("skipped");
-      else if (e.key === " ") { e.preventDefault(); v.paused ? v.play().catch(() => {}) : v.pause(); }
-    });
-
-    // 再生 (音付きが許されないブラウザでは、消音で再生して「音を出す」ボタンを出す)
     try {
       if (!v.getAttribute("src")) v.src = FRONT_ROW.src;
       if (v.readyState > 0) v.currentTime = 0;
@@ -209,26 +212,45 @@ function playFrontRow(student) {
     v.muted = typeof SND === "object" && !SND.on;
     v.play().catch(err => {
       if (finished) return;
-      if (err && err.name === "NotAllowedError" && !v.muted) {
-        v.muted = true;
-        d.sound.hidden = false;
-        v.play().catch(() => finish("failed"));
-      } else {
-        finish("failed");
-      }
+      // 音付きの自動再生が許されないブラウザでは、消音で流す
+      if (err && err.name === "NotAllowedError" && !v.muted) { v.muted = true; v.play().catch(() => finish("failed")); }
+      else finish("failed");
     });
   });
 }
 
-// 最前列中央の席の発表: 動画 → 既存の結果表示
+function frontRowClose(ms = 0) {
+  const d = frontRowDom();
+  d.root.classList.add("out");
+  return sleep(ms).then(() => {
+    d.root.hidden = true;
+    d.root.classList.remove("on", "out");
+    d.name.classList.remove("on");
+  });
+}
+
+// 最前列中央の席の発表: 前振り → 動画 → 締め → 既存の結果表示
 async function announceFrontRow(key, index, total) {
   const s = seats[key];
+  const at = await frontRowIntro(key);
   let result = "failed";
   try { result = await playFrontRow(s); } catch { result = "failed"; }
   if (result === "done") {
-    // 動画で名前はもう出ているので、結果表示は短めの登場で
+    await sleep(FRONT_ROW.endHold);   // 名前の出た終了画面を少し見せる
+    await frontRowClose(1200);        // ゆっくり暗転
+    await frontRowOutro(key, at);
+    // 名前はもう動画で出ているので、結果表示は短めの登場で
     await announce(s, key, index, total, { intro: "plain", fly: "arc" });
   } else {
+    // 再生できなかったときは、すぐ既存の結果表示へ
+    await frontRowClose(0);
+    V.renderHold = false;
+    setPlateDim(1);
+    V.uniforms.uDim.value = 1;
+    await irisTo(0, 1.05, 500, toScreen(plateLocal(key)) || at, ease.out);
+    letterbox(false);
+    spotFocus(null, 500);
+    await dolly(0, null, 500);
     await announce(s, key, index, total);
   }
   return result;

@@ -165,7 +165,7 @@ async function shuffleSeats() {
     lastIntro = lastFly = null;
     await showStart(movable);
     updateStatus();
-    const order = shuffleArray(movable);
+    const order = placeFrontRowLate(shuffleArray(movable));   // 最前列中央の動画は後ろから10番以内に
     const n = order.length;
     const prog = buildProgram(n);
     resetDecks();
