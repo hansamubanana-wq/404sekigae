@@ -249,24 +249,6 @@ const INTRO2 = {
     L.geometry.dispose(); mat.dispose(); val.geometry.dispose(); val.material.dispose();
   },
 
-  // カウントダウン: 3, 2, 1 で手前から叩きつける
-  async countdown(list, cards, k) {
-    for (const n of ["3", "2", "1"]) {
-      banner(n, 520, "count");
-      shake(.08);
-      await sleep(600);
-    }
-    const homes = cards.map(g => g.position.clone());
-    cards.forEach(g => { g.visible = true; g.scale.setScalar(k); });
-    await tween(380, t => cards.forEach((g, i) => { g.position.set(homes[i].x * t, homes[i].y, lerp(STAGE_D - .5, 0, t)); g.rotation.z = (1 - t) * (i ? -.5 : .5); }), ease.in);
-    cards.forEach(g => { g.rotation.z = 0; });
-    shake(.45);
-    sfx("slam"); sfx("boom", { vol: .6 }); sfx("jingle_reveal", { vol: .8, delay: .15 });
-    flashAt(v3(0, 0, .3), hdr(0xffffff, 1.5), 9);
-    cards.forEach((g, i) => revealBurst(g, list[i].s));
-    await tween(380, t => cards.forEach(g => g.scale.setScalar(k * (1 + (1 - t) * .15))), ease.out);
-  },
-
   // ルーレット: 名前が高速で入れ替わり、1人ずつ止まる
   async roulette(list, cards, k) {
     const pool = studentsOriginal;
@@ -727,7 +709,7 @@ async function announcePair(list, force = {}) {
   try {
     veil(true, 400);
     await INTRO2[intro](list, cards, k);
-    await sleep(1200);                       // 名前を大きく見せておく
+    await sleep(force.hold ?? 1200);         // 名前を大きく見せておく
     veil(false, 500);
     await TRAVEL2[travel](list, cards);
   } finally {
@@ -744,21 +726,16 @@ async function announcePair(list, force = {}) {
   await sleep(250);
 }
 
-// 発表の組を作る: 1人で発表するのは「最後の1人」と「最前列中央」だけ。ほかは2人ずつ
-// (2人組が余るときだけ、最前列中央か最後の1人の直前に1人の回が入る)
+// 発表の組を作る: 2人ずつ。最前列中央の席があるときは、最後の3人 (最前列中央 + 2人) を1つの組にする
+// 最前列中央がないとき (固定しているとき) は、最後の1人だけ1人で
 function makeRounds(order) {
   const rounds = [];
   if (!order.length) return rounds;
-  const last = order[order.length - 1];
-  let buf = [];
-  const flush = () => { if (buf.length) rounds.push(buf); buf = []; };
-  for (const k of order.slice(0, -1)) {
-    if (k === FRONT_ROW.key) { flush(); rounds.push([k]); continue; }
-    buf.push(k);
-    if (buf.length === 2) flush();
-  }
-  flush();
-  rounds.push([last]);
+  const fi = order.indexOf(FRONT_ROW.key);
+  const head = fi >= 0 ? order.slice(0, fi) : order.slice(0, -1);
+  const tail = fi >= 0 ? order.slice(fi) : order.slice(-1);
+  for (let i = 0; i < head.length; i += 2) rounds.push(head.slice(i, i + 2));
+  rounds.push(tail);
   return rounds;
 }
 

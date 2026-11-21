@@ -165,8 +165,9 @@ async function shuffleSeats() {
     lastIntro = lastFly = null;
     await showStart(movable);
     updateStatus();
-    const order = placeFrontRowLate(shuffleArray(movable));   // 最前列中央の動画は最後から10番目に固定
-    const rounds = makeRounds(order);                           // 2人ずつの組 (最前列中央と最後の1人だけは1人)
+    const order = placeFrontRowLate(shuffleArray(movable));   // 最前列中央は最後の3人の中に
+    const rounds = makeRounds(order);                           // 2人ずつの組 (最後は「最前列中央 + 2人」か「最後の1人」)
+    const hasFront = order.includes(FRONT_ROW.key);
     const R = rounds.length;
     const prog = buildProgram(R);
     resetDecks();
@@ -174,17 +175,19 @@ async function shuffleSeats() {
     for (let r = 0; r < R; r++) {
       for (const ev of prog[r] || []) {
         if (ev.cut === "halfway") await cutHalfway(hidden.size);
-        else if (ev.cut === "tension") await cutTension(hidden.size);
+        else if (ev.cut === "tension") { if (!hasFront) await cutTension(hidden.size); }
         else if (ev.cut) await CUTS[ev.cut]();
       }
       const list = rounds[r].map(key => ({ s: seats[key], key }));
-      if (list.length === 1 && list[0].key === FRONT_ROW.key) {
-        await announceFrontRow(list[0].key);
+      if (list.some(x => x.key === FRONT_ROW.key)) {
+        // 残り3人: 「ラスト3人…」→ 3人を見せる → 動画で最前列の中央を明かす → 残りの2人
+        if (list.length >= 3) await cutTension(hidden.size);
+        await announceFrontRow(FRONT_ROW.key, list.filter(x => x.key !== FRONT_ROW.key));
       } else if (r === R - 1 && R >= 3) {
         letterbox(true);
         await banner(list.length > 1 ? "最後の2人…" : "最後の1人…", 1500, "alert");
         letterbox(false);
-        await announcePair(list, { intro: pick(["countdown", "curtain", "warp", "search"]), travel: pick(["dive", "rockets", "meteorDrop", "spot"]) });
+        await announcePair(list, { intro: pick(["curtain", "warp", "search", "particles"]), travel: pick(["dive", "rockets", "meteorDrop", "spot"]) });
       } else {
         await announcePair(list);
       }
