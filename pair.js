@@ -764,7 +764,7 @@ function makeRounds(order) {
 
 /* ---------------- 起動時の準備 ----------------
    演出で初めて使う物が出た瞬間に、描画プログラムの準備で一瞬止まる (カクつく) のを防ぐため、
-   起動時に一度ずつ作って準備させてから片付ける */
+   起動時に一度ずつ作って準備させ、見えない状態で残しておく */
 function warmUpShaders() {
   const g = new THREE.Group();
   V.stage.add(g);
@@ -795,7 +795,8 @@ function warmUpShaders() {
   try { V.renderer.compile(V.scene, V.camera); V.composer.render(); } catch {}
   V.particles.pts.visible = pv;
   V.card.obj.visible = cv;
-  dropCard(card);
-  V.stage.remove(g);
-  disposeGroup(g);
+  // 片付けずに見えない状態で残す。素材を捨てると描画プログラムも捨てられ、
+  // 次に同じ演出が出たときに作り直しで止まるため
+  g.visible = false;
+  card.visible = false;
 }
