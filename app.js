@@ -219,8 +219,14 @@ if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
 }
 addEventListener("DOMContentLoaded", () => {
   renderSheet();
+  // 起動時に重い準備を全部済ませる (本番中に止まらないように)。ローディングは長くなってよい
   initWorld()
-    .then(() => document.body.classList.add("ready"))
+    .then(async () => {
+      try { warmUpShaders(); } catch (e) { console.warn(e); }
+      try { frontRowPreload(); } catch {}
+      await Promise.race([soundInit(), sleep(10000)]);   // 効果音の読み込みと変換
+      document.body.classList.add("ready");
+    })
     .catch(e => {
       console.error(e);
       document.body.classList.add("fallback");
