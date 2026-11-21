@@ -830,11 +830,11 @@ async function announce(s, key, index, total, force = {}) {
    ========================================================= */
 async function showStart(movable) {
   V.spotSpeed = 5;
-  const b = banner("席替え、スタート！", 1700, "kickoff");
+  const b = banner("席替え、スタート！", 1200, "kickoff");
   veil(true, 300);
   const order = [...movable].sort((a, b2) => seatXZ(b2).z - seatXZ(a).z);
   // 名札が後ろの列から次々と裏返る
-  const flips = order.map((key, i) => sleep(i * 28).then(async () => {
+  const flips = order.map((key, i) => sleep(i * 20).then(async () => {
     await flipPlate(key, true, 480);
   }));
   await Promise.all(flips);

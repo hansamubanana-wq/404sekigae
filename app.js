@@ -165,43 +165,28 @@ async function shuffleSeats() {
     lastIntro = lastFly = null;
     await showStart(movable);
     updateStatus();
-    const order = placeFrontRowLate(shuffleArray(movable));   // 最前列中央の動画は後ろから10番以内に
-    const n = order.length;
-    const prog = buildProgram(n);
+    const order = placeFrontRowLate(shuffleArray(movable));   // 最前列中央の動画は最後から10番目に固定
+    const rounds = makeRounds(order);                           // 2人ずつの組 (最前列中央と最後の1人だけは1人)
+    const R = rounds.length;
+    const prog = buildProgram(R);
     resetDecks();
-    let i = 0;
-    while (i < n) {
-      const evs = prog[i] || [];
-      for (const ev of evs) {
-        if (ev.cut === "halfway") await cutHalfway(n - i);
-        else if (ev.cut === "tension") await cutTension();
+    resetPairDeck();
+    for (let r = 0; r < R; r++) {
+      for (const ev of prog[r] || []) {
+        if (ev.cut === "halfway") await cutHalfway(hidden.size);
+        else if (ev.cut === "tension") await cutTension(hidden.size);
         else if (ev.cut) await CUTS[ev.cut]();
       }
-      const mode = (evs.find(e => e.mode) || {}).mode;
-      const item = j => ({ s: seats[order[j]], key: order[j] });
-      // 最前列中央の席はまとめて発表するモードに入れない (動画の演出があるため)
-      const hasFront = (a, b) => order.slice(a, b).includes(FRONT_ROW.key);
-      if (order[i] === FRONT_ROW.key) {
-        await announceFrontRow(order[i], i + 1, n);
-        i++;
-      } else if (mode === "double" && n - i >= 5 && !hasFront(i, i + 2)) {
-        await announceDouble(item(i), item(i + 1), i + 1);
-        i += 2;
-      } else if (mode === "speed" && n - i >= 7 && !hasFront(i, i + 4)) {
-        await speedRound([0, 1, 2, 3].map(d => item(i + d)), i + 1);
-        i += 4;
-      } else if (i === n - 1 && n >= 5) {
+      const list = rounds[r].map(key => ({ s: seats[key], key }));
+      if (list.length === 1 && list[0].key === FRONT_ROW.key) {
+        await announceFrontRow(list[0].key);
+      } else if (r === R - 1 && R >= 3) {
         letterbox(true);
-        await banner("最後の1人…", 1800, "alert");
+        await banner(list.length > 1 ? "最後の2人…" : "最後の1人…", 1500, "alert");
         letterbox(false);
-        await announce(seats[order[i]], order[i], i + 1, n, {
-          intro: pick(["search", "curtain", "warp"]),
-          fly: pick(["meteorDrop", "spiral", "rocket"]),
-        });
-        i++;
+        await announcePair(list, pick(["dive", "rockets", "spot", "meteor", "rise"]));
       } else {
-        await announce(seats[order[i]], order[i], i + 1, n);
-        i++;
+        await announcePair(list);
       }
     }
     await showFinale();
