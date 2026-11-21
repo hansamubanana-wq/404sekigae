@@ -1,9 +1,9 @@
 // オフラインでも開けるようにするキャッシュ
 // ・このサイトのファイル: ネットを優先 (更新がすぐ反映される)。つながらないときはキャッシュ
 // ・three.js やフォントなど外部のファイル: キャッシュを優先
-const CACHE = "sekigae-v3";
+const CACHE = "sekigae-v4";
 const CORE = [
-  "./", "index.html", "style.css", "students.js", "sound.js", "app.js", "world.js", "models.js", "extras.js", "show.js",
+  "./", "index.html", "style.css", "students.js", "sound.js", "app.js", "world.js", "models.js", "extras.js", "frontrow.js", "show.js",
   "sounds/_list.json", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png",
 ];
 
@@ -22,6 +22,8 @@ self.addEventListener("activate", e => {
 self.addEventListener("fetch", e => {
   const req = e.request;
   if (req.method !== "GET") return;
+  // 動画は部分読み込み (Range) で届くので、キャッシュを通さずそのままネットから
+  if (req.headers.has("range") || /\.(mp4|webm|mov)(\?|$)/.test(req.url)) return;
   const sameOrigin = new URL(req.url).origin === location.origin;
 
   if (sameOrigin) {

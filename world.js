@@ -890,6 +890,7 @@ function tapPulse(key) {
 
 /* ---------------- 毎フレーム ---------------- */
 function frame() {
+  if (V.renderHold) { V.clock.getDelta(); return; }   // 動画の再生中は3Dの描画を止める
   const dt = Math.min(V.clock.getDelta(), .05) * TIME_SCALE;
   V.time = (V.time || 0) + dt;
   const t = V.time;
