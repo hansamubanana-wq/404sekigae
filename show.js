@@ -415,10 +415,10 @@ async function flyDecoy(s, key) {
   await tween(900, t => { c.position.copy(bez(p0, p0.clone().lerp(P, .5).add(v3(0, 1.6, .5)), P, t)); c.scale.setScalar(lerp(1.05, 1, t)); }, ease.inOut);
 }
 
-// 猫の乱入: 名前をくわえて走り回り、正しい席に落としていく
+// 猫の乱入: 名前をくわえて机を渡り、正しい席にそっと置く
 async function flyCat(s, key) {
-  const side = Math.random() < .5 ? -1 : 1;
-  await withCatView([side], () => catDelivery(card(), key, side, pick(CAT_COATS)));
+  await deliverCatCards([{ s, key }], [card()]);
+  return "landed";
 }
 
 // UFO: 名前を吸い上げて連れ去り、遠回りして席の上から降ろす
@@ -681,6 +681,12 @@ async function land(s, key, style = "pop") {
   hidden.delete(key);
   seatLook(key);
   mcSeatLanded(key);
+  if (style === "place") {
+    o.flipper.rotation.y = 0;
+    sfx("chime", { vol: .24, pan: P.x / V.visW });
+    updateStatus();
+    return;
+  }
   if (style === "pop") {
     o.flipper.rotation.y = 0;
     tween(500, t => o.pivot.scale.setScalar(1 + (1 - t) * .35), ease.back);

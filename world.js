@@ -19,6 +19,7 @@ const FONT = `"M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Hiragino Sans",
 
 const FACE_W = 1.55, FACE_H = 0.83;   // 名札の大きさ
 const SX = 1.8, SZ = 1.5;             // 机の間隔
+const DESK_SURFACE_Y = .485;          // 天板の上面
 const PLATE_Y = 1.02;                 // 名札の高さ
 const STAGE_D = 9;                    // カメラからステージまでの距離
 const PITCH = 42;                     // カメラの見下ろし角
@@ -656,7 +657,7 @@ function buildDesks() {
   }), n);
   V.scene.add(ped, top, strip, glow);
   V.deskParts = { ped, top, strip, glow, color: new THREE.Color() };
-  V.deskMeshes = [[ped, .2], [top, .45], [strip, .4], [glow, .015]];
+  V.deskMeshes = [[ped, .2], [top, DESK_SURFACE_Y - .035], [strip, .4], [glow, .015]];
   for (const [mesh] of V.deskMeshes) mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   const matrix = new THREE.Matrix4();
 
