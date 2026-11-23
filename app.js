@@ -390,7 +390,7 @@ async function shuffleSeats(scope = null) {
   } catch (e) {
     console.error(e);
   } finally {
-    bgmStop();
+    bgmHome();
     if (worldReady) { endTension(); letterbox(false); V.camRig = null; V.billboard = false; setPlateDim(1); V.spotPower = 1; }
     hidden.clear();
     replayScope = null;
@@ -415,6 +415,13 @@ function resetSeats() {
 
 /* ---------- 起動 ---------- */
 loadSeats();
+function unlockPageAudio() {
+  soundUnlock();
+  if (!busy) bgmHome();
+}
+for (const event of ["click", "touchend", "keydown"]) {
+  addEventListener(event, unlockPageAudio, { passive: true });
+}
 // ホーム画面に追加 (PWA) 用。オフラインでも開けるようにする
 if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
   addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));

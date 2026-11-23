@@ -33,91 +33,174 @@ function stageActor(build, variant) {
 }
 
 /* ---------------- 猫 ---------------- */
-// 右 (+x) に向かって走る。こちら (カメラ) に顔を向けている。左向きは scale.x をマイナスに
-function buildCat(color = 0xf2a541) {
-  const g = new THREE.Group();
-  const fur = stdMat(color, { roughness: .6 });
-  const white = stdMat(0xcfc6b8, { roughness: .7 });
-  const dark = stdMat(0x111111, { roughness: .25 });
-  const pink = stdMat(0xff8fb1, { roughness: .5 });
-  const stripe = stdMat(new THREE.Color(color).multiplyScalar(.72).getHex(), { roughness: .6 });
+const CAT_COATS = [0xcf8749, 0x8d99a8, 0x3c3942, 0xe6d4b9];
 
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(.2, .44, 6, 18), fur);
-  body.rotation.z = Math.PI / 2;
-  body.position.y = .42;
-  const belly = new THREE.Mesh(new THREE.CapsuleGeometry(.14, .22, 6, 14), white);
-  belly.rotation.z = Math.PI / 2;
-  belly.scale.set(1, .9, .7);
-  belly.position.set(.03, .33, .06);
-  g.add(body, belly);
-  for (let i = 0; i < 3; i++) {
-    const s = new THREE.Mesh(new THREE.TorusGeometry(.2, .025, 6, 20, Math.PI), stripe);
-    s.rotation.y = Math.PI / 2;
-    s.position.set(-.18 + i * .14, .42, 0);
-    g.add(s);
+// 鼻先は +x。胴の模様は頂点色にし、毛並みを描くための追加メッシュを使わない。
+function buildCat(color) {
+  const g = new THREE.Group();
+  const torso = new THREE.Group();
+  const oval = new THREE.SphereGeometry(1, 16, 12);
+  const fur = stdMat(color, { roughness: .91 });
+  const cream = stdMat(new THREE.Color(color).lerp(new THREE.Color(0xffecd6), .78), { roughness: .94 });
+  const ears = stdMat(0xbc7775, { roughness: .9 });
+  const nose = stdMat(0x53333e, { roughness: .48 });
+  const iris = stdMat(color === CAT_COATS[1] ? 0x9eba70 : 0xeab368, { roughness: .28 });
+  const pupil = stdMat(0x181217, { roughness: .37 });
+  const part = (parent, mat, x, y, z, sx, sy, sz, geo = oval) => {
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(x, y, z);
+    mesh.scale.set(sx, sy, sz);
+    parent.add(mesh);
+    return mesh;
+  };
+  const coat = oval.clone();
+  const pos = coat.attributes.position, colors = [];
+  const base = new THREE.Color(color), shade = base.clone();
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const stripe = Math.max(0, Math.cos(16 * x + 2 * z * z - y)) ** 3;
+    shade.copy(base).multiplyScalar(1.05 + .12 * y - stripe * (.24 + .08 * y));
+    shade.lerp(cream.color, .65 * Math.max(0, -y) ** 3);
+    colors.push(shade.r, shade.g, shade.b);
   }
+  coat.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  part(torso, stdMat(0xffffff, { roughness: .91, vertexColors: true }), -.06, .41, 0, .43, .205, .155, coat);
+  part(torso, fur, .25, .46, 0, .18, .2, .144);
 
   const head = new THREE.Group();
-  head.position.set(.38, .64, .02);
-  const skull = new THREE.Mesh(new THREE.SphereGeometry(.21, 24, 18), fur);
-  skull.scale.set(1, .92, .95);
-  const muzzle = new THREE.Mesh(new THREE.SphereGeometry(.09, 16, 12), white);
-  muzzle.scale.set(1.25, .8, .8);
-  muzzle.position.set(0, -.06, .16);
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(.028, 10, 8), pink);
-  nose.position.set(0, -.02, .23);
-  head.add(skull, muzzle, nose);
-  for (const sx of [-1, 1]) {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(.036, 12, 10), dark);
-    eye.position.set(sx * .075, .035, .18);
-    const shine = new THREE.Mesh(new THREE.SphereGeometry(.012, 8, 6), new THREE.MeshBasicMaterial({ color: 0xbbbbbb }));
-    shine.position.set(sx * .075 + .012, .05, .213);
-    const ear = new THREE.Mesh(new THREE.ConeGeometry(.08, .17, 4), fur);
-    ear.position.set(sx * .12, .19, -.01);
-    ear.rotation.z = -sx * .35;
-    const inner = new THREE.Mesh(new THREE.ConeGeometry(.045, .1, 4), pink);
-    inner.position.set(sx * .12, .18, .03);
-    inner.rotation.z = -sx * .35;
-    head.add(eye, shine, ear, inner);
-    for (let w = 0; w < 2; w++) {
-      const whisker = new THREE.Mesh(new THREE.CylinderGeometry(.004, .004, .2, 4), white);
-      whisker.rotation.z = Math.PI / 2 + sx * (w ? .15 : -.1);
-      whisker.position.set(sx * .15, -.05 - w * .03, .17);
-      head.add(whisker);
+  head.position.set(.35, .59, 0);
+  torso.add(head);
+  part(head, fur, .07, 0, 0, .183, .16, .157);
+  part(head, cream, .208, -.06, 0, .099, .078, .112);
+  part(head, nose, .3, -.032, 0, .026, .034, .043);
+  const mouth = new THREE.Object3D();
+  mouth.position.set(.32, -.085, 0);
+  head.add(mouth);
+  const earGeo = new THREE.ConeGeometry(1, 2, 5);
+  const whiskers = [];
+  for (const side of [-1, 1]) {
+    const ear = part(head, fur, .018, .157, side * .102, .081, .115, .069, earGeo);
+    ear.rotation.x = side * .24;
+    const inner = part(head, ears, .057, .164, side * .108, .043, .074, .045, earGeo);
+    inner.rotation.x = side * .24;
+    part(head, iris, .153, .038, side * .128, .054, .037, .023);
+    part(head, pupil, .175, .038, side * .146, .015, .028, .009);
+    for (let i = 0; i < 3; i++) {
+      whiskers.push(.244, -.059 - i * .014, side * .072, .232 - .025 * i, -.024 - i * .052, side * (.215 - i * .01));
     }
   }
-  g.add(head);
+  const whiskerGeo = new THREE.BufferGeometry();
+  whiskerGeo.setAttribute("position", new THREE.Float32BufferAttribute(whiskers, 3));
+  head.add(new THREE.LineSegments(whiskerGeo, new THREE.LineBasicMaterial({ color: 0xe4cfc0 })));
 
   const legs = [];
-  for (const [x, z, ph] of [[.24, .1, 0], [.24, -.1, Math.PI], [-.24, .1, Math.PI], [-.24, -.1, 0]]) {
-    const pivot = new THREE.Group();
-    pivot.position.set(x, .36, z);
-    const leg = new THREE.Mesh(new THREE.CapsuleGeometry(.055, .2, 4, 8), fur);
-    leg.position.y = -.17;
-    const paw = new THREE.Mesh(new THREE.SphereGeometry(.06, 10, 8), white);
-    paw.position.y = -.3;
-    pivot.add(leg, paw);
-    g.add(pivot);
-    legs.push({ pivot, ph });
+  for (const [x, z, phase] of [[.23, .107, 0], [.23, -.107, Math.PI], [-.33, .115, Math.PI], [-.33, -.115, 0]]) {
+    const leg = new THREE.Group();
+    leg.position.set(x, .30, z);
+    part(leg, fur, 0, -.106, 0, x < 0 ? .087 : .062, .15, .063);
+    part(leg, cream, .036, -.25, 0, .086, .048, .06);
+    torso.add(leg);
+    legs.push({ leg, phase });
   }
-
-  const tailCurve = new THREE.CatmullRomCurve3([v3(-.32, .46, 0), v3(-.52, .55, 0), v3(-.6, .78, 0), v3(-.5, .96, 0)]);
-  const tail = new THREE.Mesh(new THREE.TubeGeometry(tailCurve, 20, .045, 8), fur);
-  const tailPivot = new THREE.Group();
-  tailPivot.position.set(-.32, .46, 0);
-  tail.position.set(.32, -.46, 0);
-  tailPivot.add(tail);
-  g.add(tailPivot);
-
-  g.userData.run = true;
-  g.userData.update = t => {
-    const sp = g.userData.run ? 18 : 3;
-    legs.forEach(l => { l.pivot.rotation.z = Math.sin(t * sp + l.ph) * (g.userData.run ? .75 : .05); });
-    body.position.y = .42 + (g.userData.run ? Math.abs(Math.sin(t * sp)) * .04 : 0);
-    head.rotation.z = Math.sin(t * sp * .5) * .06;
-    tailPivot.rotation.z = Math.sin(t * 6) * .25;
+  const tailCurve = new THREE.CatmullRomCurve3([v3(), v3(-.17, .045, 0), v3(-.28, .2, 0), v3(-.44, .25, .02), v3(-.51, .19, .04)]);
+  const tail = new THREE.Mesh(new THREE.TubeGeometry(tailCurve, 14, .043, 6), fur);
+  tail.position.set(-.43, .45, 0);
+  torso.add(tail);
+  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(1.92, .87), new THREE.MeshBasicMaterial({
+    map: V.tex.glow, color: 0x040309, transparent: true, opacity: .68, depthWrite: false,
+  }));
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.position.set(-.04, .024, 0);
+  g.add(shadow, torso);
+  let gait = 0;
+  g.userData.mouth = mouth;
+  g.userData.reset = () => { gait = 0; g.userData.run = false; };
+  g.userData.update = (t, dt) => {
+    const running = g.userData.run;
+    if (running) gait += dt * 22;
+    for (const { leg, phase } of legs) {
+      const stride = gait + phase;
+      leg.rotation.z = running ? .64 * Math.sin(stride) : 0;
+      leg.position.y = .30 + (running ? .085 * Math.max(0, Math.cos(stride)) : 0);
+    }
+    torso.position.y = running ? .035 * Math.abs(Math.sin(gait)) : 0;
+    head.rotation.z = running ? .075 * Math.sin(gait) : .045 * Math.sin(t * 5);
+    head.rotation.y = .13 + .18 * Math.sin(t * 2.5);
+    tail.rotation.y = .35 * Math.sin(t * 5);
+    tail.rotation.z = .13 * Math.sin(t * 6);
   };
   return g;
+}
+
+// 後ろの列より手前の通路を往復する。カードだけが名札より高い所を通って席へ降りる。
+async function catDelivery(card, key, side, coat) {
+  const cat = stageActor(buildCat, coat);
+  V.scene.add(cat);
+  cat.scale.setScalar(1.15);
+  const aisle = (rows - 1) / 2 * SZ + 1.13;
+  const edge = (cols - 1) / 2 * SX + 1.4;
+  const inward = side < 0 ? 0 : Math.PI;
+  cat.position.set(side * edge, 0, aisle);
+  cat.rotation.y = inward;
+  const mouth = cat.userData.mouth;
+  const cardStart = card.position.clone();
+  const carryAt = v3(), pickup = v3();
+  const scale = card.scale.x, carryScale = .49;
+  const feet = ms => {
+    for (let i = 0; i < ms / 180; i++) sfx("step", { vol: .36, delay: i * .18 / TIME_SCALE, rate: 1.55, vary: .2 });
+  };
+  const mouthAt = point => V.stage.worldToLocal(mouth.getWorldPosition(point));
+  const walk = (x, ms, carry = false) => {
+    const start = cat.position.x;
+    cat.userData.run = true;
+    feet(ms);
+    return tween(ms, t => {
+      cat.position.x = lerp(start, x, t);
+      if (carry) {
+        card.position.copy(mouthAt(carryAt));
+        card.rotation.z = .08 * Math.sin(t * 18);
+      }
+    }).then(() => { cat.userData.run = false; });
+  };
+  try {
+    cat.position.x = side * 2.45;
+    mouthAt(pickup);
+    cat.position.x = side * edge;
+    await Promise.all([
+      walk(side * 2.45, 1000),
+      tween(1000, t => {
+        card.position.lerpVectors(cardStart, pickup, t);
+        card.scale.setScalar(lerp(scale, carryScale, t));
+      }),
+    ]);
+    bubble("ニャッ", V.stage.worldToLocal(v3(cat.position.x, 1.45, aisle)), 700);
+    await walk(side * 1.45, 600, true);
+
+    const { x, z } = seatXZ(key);
+    const target = plateLocal(key);
+    const lift = V.stage.worldToLocal(v3(cat.position.x, 2.45, aisle));
+    const above = V.stage.worldToLocal(v3(x, 2.45, z + .12));
+    const held = card.position.clone(), roll = card.rotation.z;
+    await tween(370, t => {
+      card.position.lerpVectors(held, lift, t);
+      card.rotation.z = lerp(roll, 0, t);
+    }, ease.out);
+    await Promise.all([
+      tween(420, t => card.position.lerpVectors(lift, above, t), ease.inOut)
+        .then(() => tween(340, t => {
+          card.position.lerpVectors(above, target, t);
+          card.scale.setScalar(lerp(carryScale, 1, t));
+        }, ease.in)),
+      tween(340, t => {
+        // 向きを変える間は、しっぽの長さも含めて机から離す。
+        cat.rotation.y = inward + Math.PI * t;
+        cat.position.z = aisle + .66 * Math.sin(Math.PI * t);
+      }, ease.inOut)
+        .then(() => walk(side * edge, 850)),
+    ]);
+  } finally {
+    cat.userData.remove();
+  }
 }
 
 /* ---------------- ロケット ---------------- */
