@@ -1,0 +1,254 @@
+"use strict";
+
+// 丸いシルエットを優先し、動く部位ごとに形をまとめて描画する。
+function buildMcModel(mergeGeometries) {
+  const actor = new THREE.Group();
+  actor.name = "MC";
+  const body = new THREE.Group();
+  actor.add(body);
+  const skin = 0xea9a62, hair = 0x25172c, hairRidge = 0x493047;
+  const navy = 0x26478a, ink = 0x11172f, wine = 0xc63866, ivory = 0xead9c5;
+  const lit = stdMat(0xffffff, { vertexColors: true, roughness: .68, envMapIntensity: .35 });
+  const faceInk = new THREE.MeshBasicMaterial({ vertexColors: true });
+  const sphere = new THREE.SphereGeometry(1, 14, 9);
+  const portrait = new THREE.SphereGeometry(1, 22, 14);
+  const bulb = (x, y, z, width, height, depth, color, tilt = 0) => [
+    (width >= .25 ? portrait : sphere).clone().scale(width, height, depth).rotateZ(tilt).translate(x, y, z), color,
+  ];
+  const outline = (points, z, color) => {
+    const shape = new THREE.Shape();
+    shape.moveTo(...points[0]);
+    for (const point of points.slice(1)) shape.lineTo(...point);
+    shape.closePath();
+    return [new THREE.ShapeGeometry(shape).translate(0, 0, z), color];
+  };
+  const pack = (parent, pieces, material = lit) => {
+    const parts = pieces.map(([geometry, color]) => {
+      if (geometry.index) {
+        const source = geometry;
+        geometry = source.toNonIndexed();
+        source.dispose();
+      }
+      // 部位ごとに UV の有無を揃え、色は頂点に持たせる。
+      geometry.deleteAttribute("uv");
+      const rgb = new THREE.Color(color);
+      const colors = new Float32Array(geometry.attributes.position.count * 3);
+      for (let i = 0; i < colors.length; i += 3) rgb.toArray(colors, i);
+      geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+      return geometry;
+    });
+    const joined = mergeGeometries(parts);
+    parts.forEach(geometry => geometry.dispose());
+    const mesh = new THREE.Mesh(joined, material);
+    parent.add(mesh);
+    return mesh;
+  };
+  const group = (parent, x = 0, y = 0, z = 0) => {
+    const node = new THREE.Group();
+    node.position.set(x, y, z);
+    parent.add(node);
+    return node;
+  };
+
+  const jacket = new THREE.SphereGeometry(1, 24, 18).scale(.361, .375, .225);
+  const positions = jacket.attributes.position;
+  const colors = new Float32Array(positions.count * 3);
+  const blue = new THREE.Color(navy);
+  const lightBlue = new THREE.Color(0x4165ad);
+  const shade = new THREE.Color();
+  for (let i = 0; i < positions.count; i++) {
+    shade.copy(blue).lerp(lightBlue, clamp01((positions.getY(i) + .24) * 1.3)).toArray(colors, i * 3);
+  }
+  jacket.translate(0, 1.055, 0);
+  jacket.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  const sequins = canvasTex(makeCanvas(96, 96));
+  const context = sequins.image.getContext("2d");
+  context.fillStyle = "#b8c2d6";
+  context.fillRect(0, 0, 96, 96);
+  for (let row = 0; row < 12; row++) {
+    for (let col = 0; col < 12; col++) {
+      const tint = (row * 19 + col * 31) % 9;
+      context.fillStyle = tint < 2 ? "#ffffff" : tint < 5 ? "#e6eeff" : "#96a7ce";
+      context.fillRect(col * 8 + (row % 2), row * 8 + 2, tint < 2 ? 3 : 2, 2);
+    }
+  }
+  sequins.colorSpace = THREE.SRGBColorSpace;
+  const coat = new THREE.Mesh(jacket, stdMat(0xffffff, {
+    map: sequins, vertexColors: true, roughness: .47, metalness: .23, envMapIntensity: .6,
+  }));
+  body.add(coat);
+  pack(body, [
+    bulb(0, .79, 0, .25, .155, .175, ink),
+    bulb(0, 1.395, .019, .12, .148, .113, skin),
+    outline([[-.114,1.336],[.114,1.336],[.048,.901],[-.036,.901]], .204, 0xd6c2aa),
+    outline([[-.245,1.30],[-.118,1.345],[-.035,.940],[-.153,1.118],[-.121,1.147]], .219, ink),
+    outline([[.245,1.30],[.121,1.345],[.034,.940],[.153,1.118],[.12,1.147]], .219, ink),
+    bulb(0, 1.297, .246, .030, .026, .019, wine),
+    outline([[-.132,1.344],[-.019,1.321],[-.019,1.272],[-.127,1.254]], .242, wine),
+    outline([[.132,1.344],[.019,1.321],[.019,1.272],[.127,1.254]], .242, wine),
+    outline([[.173,1.172],[.248,1.183],[.242,1.141],[.174,1.140]], .205, 0xf0d591),
+    bulb(-.014,.926,.204,.019,.019,.012,0xffc76a),
+  ]);
+
+  const head = group(body, 0, 1.675, .045);
+  pack(head, [
+    bulb(0, 0, 0, .300, .281, .246, skin),
+    bulb(-.289, -.008, -.012, .060, .071, .051, skin, -.2),
+    bulb(.289, -.008, -.012, .060, .071, .051, skin, .2),
+    bulb(0, -.037, .231, .054, .041, .046, 0xf6af76),
+    bulb(-.191,-.079,.185,.061,.028,.022,0xe27f67),
+    bulb(.191,-.079,.185,.061,.028,.022,0xe27f67),
+    bulb(0,.135,-.063,.309,.191,.227,hair),
+    bulb(-.247,.085,-.037,.074,.137,.164,hair,-.19),
+    bulb(.247,.085,-.037,.074,.137,.164,hair,.19),
+    bulb(-.045,.250,.060,.272,.122,.222,hair,.20),
+    bulb(.028,.283,.117,.218,.088,.138,hairRidge,.22),
+    bulb(.073,.319,.102,.165,.061,.101,hair,.21),
+    bulb(.040,.292,.209,.142,.035,.047,0x654052,.23),
+  ]);
+
+  const eyes = [-1, 1].map(side => {
+    const eye = group(head, side * .115, .033, .222);
+    eye.rotation.y = side * .25;
+    pack(eye, [
+      bulb(0,0,0,.092,.106,.034,ink),
+      bulb(0,.002,.018,.079,.091,.027,0xe8dbc8),
+      bulb(-.006,-.005,.040,.036,.056,.012,0x274f6b),
+      bulb(-.005,-.004,.048,.025,.047,.012,0x101836),
+      bulb(-.019,.022,.057,.015,.017,.008,0xf2eadc),
+    ], faceInk);
+    const brow = group(head, side * .116, .171, .211);
+    pack(brow, [bulb(0,0,0,.073,.019,.023,hair,side * -.17)], faceInk);
+    return { eye, brow, side };
+  });
+  const mouth = group(head, 0, -.133, .231);
+  pack(mouth, [
+    bulb(0,0,0,.117,.052,.023,0x47233a),
+    bulb(0,.017,.020,.091,.015,.009,ivory),
+    bulb(.014,-.022,.020,.052,.013,.008,0xdf6681),
+  ], faceInk);
+  const smile = group(head, 0, -.127, .234);
+  // 笑顔の弧と歯を一体にして、決めの瞬間だけ切り替える。
+  const grin = (top, bottom, x, depth, color) => {
+    const shape = new THREE.Shape();
+    shape.moveTo(-x, top);
+    shape.quadraticCurveTo(0, top - .053, x, top);
+    shape.quadraticCurveTo(x * .63, bottom - .028, 0, bottom);
+    shape.quadraticCurveTo(-x * .63, bottom - .028, -x, top);
+    return [new THREE.ShapeGeometry(shape).translate(0, 0, depth), color];
+  };
+  pack(smile, [grin(.038,-.077,.140,.004,0x51213d),grin(.026,-.030,.110,.009,ivory)], faceInk);
+
+  const armLength = .27, forearmLength = .245;
+  const arms = [-1, 1].map(side => {
+    const upper = group(body), lower = group(body), palm = group(body);
+    pack(upper, [bulb(0,armLength*.5,0,.100,.190,.109,navy)]);
+    pack(lower, [bulb(0,forearmLength*.48,0,.085,.146,.090,navy),bulb(0,.215,0,.085,.042,.087,ivory)]);
+    const fist = pack(palm, [
+      bulb(0,0,0,.092,.098,.075,skin),
+      bulb(-side*.063,.017,.028,.039,.066,.042,0xf6ad79,side * .36),
+    ]);
+    const open = side === 1 ? pack(palm, [
+      bulb(0,.015,0,.084,.087,.050,skin),
+      bulb(-.051,.095,.005,.025,.078,.029,skin,.17),
+      bulb(-.008,.111,.008,.024,.090,.027,skin,.03),
+      bulb(.035,.102,.008,.023,.080,.027,skin,-.15),
+      bulb(.063,.073,.005,.020,.062,.024,skin,-.25),
+      bulb(-.074,.018,.021,.026,.050,.027,0xf6ad79,.50),
+    ]) : null;
+    return { side, upper, lower, palm, fist, open };
+  });
+  const mic = group(arms[0].palm, -.015,.012,.010);
+  pack(mic, [
+    [new THREE.CylinderGeometry(.038,.026,.240,12).translate(0,.014,0),0x252840],
+    [new THREE.CylinderGeometry(.041,.040,.025,12).translate(0,.127,0),0x7d89ae],
+    bulb(0,.165,0,.059,.061,.059,0xbdc4d1),
+    bulb(-.018,.182,.027,.019,.018,.019,0xf2ddbc),
+  ]);
+
+  const legs = [-1, 1].map(side => {
+    const hip = group(actor, side * .137, .800, 0);
+    const knee = group(hip, 0, -.326, 0);
+    const foot = group(knee, 0, -.335, .014);
+    pack(hip, [bulb(0,-.15,0,.128,.211,.142,ink)]);
+    pack(knee, [bulb(0,-.136,0,.100,.197,.109,ink)]);
+    pack(foot, [
+      bulb(0,-.036,.088,.116,.094,.205,0x151631),
+      bulb(0,-.065,.136,.109,.030,.157,0x323a5a),
+      bulb(0,.013,.129,.089,.028,.121,0x243259),
+    ]);
+    return { hip, knee, foot };
+  });
+  sphere.dispose();
+  portrait.dispose();
+  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(.95, .72), new THREE.MeshBasicMaterial({
+    map: V.tex.glow, color: 0x100c24, opacity: .66, transparent: true, depthWrite: false,
+  }));
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.position.y = .024;
+  actor.add(shadow);
+
+  return { actor, body, head, eyes, mouth, smile, arms, mic, legs, armLength, forearmLength,
+    shoulder: v3(), wrist: v3(), elbow: v3(), axis: v3(), bend: v3(), up: v3(0, 1, 0) };
+}
+
+function placeMcArm(host, arm, x, y, z) {
+  const { shoulder, wrist, elbow, axis, bend, up, armLength: a, forearmLength: b } = host;
+  shoulder.set(arm.side * .298, 1.277, .012);
+  wrist.set(x, y, z);
+  axis.subVectors(wrist, shoulder);
+  const distance = Math.min(axis.length(), a + b - .002);
+  axis.normalize();
+  wrist.copy(shoulder).addScaledVector(axis, distance);
+  bend.set(arm.side, -.65, -.25).addScaledVector(axis, -axis.dot(bend)).normalize();
+  const along = (a * a + distance * distance - b * b) / (2 * distance);
+  elbow.copy(shoulder).addScaledVector(axis, along).addScaledVector(bend, Math.sqrt(Math.max(0, a * a - along * along)));
+  arm.upper.position.copy(shoulder);
+  arm.upper.quaternion.setFromUnitVectors(up, axis.subVectors(elbow, shoulder).normalize());
+  arm.lower.position.copy(elbow);
+  arm.lower.quaternion.setFromUnitVectors(up, axis.subVectors(wrist, elbow).normalize());
+  arm.palm.position.copy(wrist);
+  arm.palm.quaternion.copy(arm.lower.quaternion);
+}
+
+function poseMc(host, t, distance, walking, voice, cameraAngle = 0) {
+  const phase = distance * Math.PI * 2 / 1.16;
+  const sway = walking * Math.sin(phase);
+  host.body.position.y = .033 * walking * Math.abs(Math.sin(phase)) + .008 * Math.sin(t * 4);
+  host.body.rotation.z = sway * .045;
+  host.legs.forEach(({ hip, knee, foot }, i) => {
+    const stride = phase + i * Math.PI;
+    hip.rotation.x = .48 * walking * Math.sin(stride);
+    knee.rotation.x = .58 * walking * Math.max(0, Math.cos(stride));
+    foot.rotation.x = -hip.rotation.x - .72 * knee.rotation.x;
+  });
+
+  const welcome = ease.inOut(clamp01((t - 1.21) / .35)) * (1 - ease.inOut(clamp01((t - 2.62) / .48)));
+  const fist = ease.out(clamp01((t - 6.69) / .28)) * (1 - ease.inOut(clamp01((t - 7.29) / .6)));
+  const reveal = ease.inOut(clamp01((t - 8.49) / .42)) * (1 - ease.inOut(clamp01((t - 10.03) / .71)));
+  const speaking = ease.inOut(clamp01((t - 1.00) / .30)) * (1 - ease.inOut(clamp01((t - 10.13) / .52)));
+  const side = Math.max(welcome, reveal, fist);
+  placeMcArm(host, host.arms[0], lerp(-.339,-.155,speaking), lerp(.84,1.443,speaking), lerp(.03 + sway * .16,.36,speaking));
+  placeMcArm(host, host.arms[1], lerp(.351,.665,side) - .12 * fist, .84 + .375 * welcome + .815 * fist + .388 * reveal,
+    .02 - sway * .16 + .11 * welcome + .08 * fist + .28 * reveal);
+  const free = host.arms[1];
+  free.open.visible = Math.max(welcome, reveal) > .35 && fist < .40;
+  free.fist.visible = !free.open.visible;
+  // マイクの先端を顔に向ける。口は正面から見えるよう少し横にずらす。
+  const { palm } = host.arms[0];
+  host.axis.set(.006, 1.565, .30).sub(palm.position).applyQuaternion(host.armRotation.copy(palm.quaternion).invert()).normalize();
+  host.mic.quaternion.setFromUnitVectors(host.up, host.axis);
+
+  const glance = walking * THREE.MathUtils.clamp(cameraAngle * .72, -.69, .65);
+  host.head.rotation.set(-.031 * voice - .050 * fist, glance - .09 * reveal, .07 * welcome + sway * .034 - .08 * fist);
+  const blinkPhase = Math.min(Math.abs(t - .80), Math.abs(t - 3.14), Math.abs(t - 5.67), Math.abs(t - 8.23), Math.abs(t - 10.18));
+  const blink = clamp01(blinkPhase / .082);
+  for (const { eye, brow, side: eyeSide } of host.eyes) {
+    eye.scale.y = Math.max(.07, blink * (1 + voice * .10 - fist * .16));
+    brow.position.y = .168 + .020 * voice + .022 * fist + .010 * reveal * eyeSide;
+    brow.rotation.z = eyeSide * (.18 * welcome + .19 * fist - .08 * reveal);
+  }
+  host.smile.visible = fist > .50 && (voice < .32 || t > 7.15);
+  host.mouth.visible = !host.smile.visible;
+  host.mouth.scale.set(1 + .17 * welcome + .14 * fist, .19 + .91 * voice + .13 * welcome, 1);
+}
