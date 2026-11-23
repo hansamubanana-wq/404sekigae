@@ -391,6 +391,13 @@ body.letterbox::before, body.letterbox::after { transform: none; }
 .mc-subtitles > div { min-height: 1.38em; }
 .mc-previous[hidden] { display: block; visibility: hidden; }
 .mc-speaker { margin-inline-end: .55em; color: #ffdb68; }
+.mc-reaction {
+  position: fixed;
+  z-index: 45;
+  padding-block-start: 8px;
+  font-size: clamp(18px, 2.7vw, 34px);
+  pointer-events: none;
+}
 
 /* ===== 最前列中央の動画 ===== */
 .frontrow {
@@ -577,7 +584,7 @@ body.fallback .sheet-wrap {
 @media print {
   @page { size: landscape; margin: 10mm; }
   html, body { height: auto; overflow: visible; background: #fff !important; color: #111827; }
-  #scene, #frontImpactFlash, .hud, .loading, .bubble, .banner, .caption, .mc-intro, .frontrow, .fr-iris, .fr-debug, .seat-history { display: none !important; }
+  #scene, #frontImpactFlash, .hud, .loading, .bubble, .banner, .caption, .mc-intro, .mc-reaction, .frontrow, .fr-iris, .fr-debug, .seat-history { display: none !important; }
   body::before, body::after { display: none; }
   .sheet-wrap { display: flex !important; flex-direction: column; position: static !important; }
   .sheet-desk { color: #111827; border-color: #111827; }

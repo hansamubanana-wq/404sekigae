@@ -364,6 +364,7 @@ async function shuffleSeats(scope = null) {
       console.warn("司会者の演出を開始できませんでした", error);
       return null;
     });
+    beginMcShow();
     await showStart(movable, mc ?? undefined);
     bgmPreload();
     updateStatus();
@@ -398,6 +399,7 @@ async function shuffleSeats(scope = null) {
   } catch (e) {
     console.error(e);
   } finally {
+    endMcShow();
     bgmHome();
     if (worldReady) { endTension(); letterbox(false); V.camRig = null; V.billboard = false; setPlateDim(1); V.spotPower = 1; }
     hidden.clear();

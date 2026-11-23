@@ -680,6 +680,7 @@ async function land(s, key, style = "pop") {
   card().visible = false;
   hidden.delete(key);
   seatLook(key);
+  mcSeatLanded(key);
   if (style === "pop") {
     o.flipper.rotation.y = 0;
     tween(500, t => o.pivot.scale.setScalar(1 + (1 - t) * .35), ease.back);
@@ -851,6 +852,7 @@ async function showFinale() {
   V.spotSpeed = 4;
   bgm("finale");
   const b = banner("全員決定！", 3000, "finale");
+  playMcReaction(mcShow?.last === "unbelievable" ? "wow" : "unbelievable", true);
   confettiShower(6000);
   const palettes = [[0xfbbf24, 0xffffff], [0x2f8cff, 0x7dd3fc], [0xff4fb0, 0xfda4d4], [0xa78bfa, 0xffffff], [0x34d399, 0xfbbf24]];
   for (let i = 0; i < 12; i++) {
