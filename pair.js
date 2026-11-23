@@ -228,6 +228,56 @@ function showParallax(direction) {
   return camGo(camPoseLook(V.homePos.clone().add(offset), V.stage.position), 850);
 }
 
+function buildFrontImpactRings() {
+  const rig = new THREE.Group();
+  const geometry = new THREE.RingGeometry(.94, 1, 64);
+  for (const color of [0xffd693, 0xfffaf0]) {
+    const ring = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
+      color: hdr(color, 3.2), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    }));
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = .035 + rig.children.length * .02;
+    rig.add(ring);
+  }
+  V.scene.add(rig);
+  return rig;
+}
+
+async function frontRowLandingImpact(key) {
+  const rig = V.frontImpactRings;
+  const flash = document.getElementById("frontImpactFlash");
+  const { x, z } = seatXZ(key);
+  rig.position.set(x, 0, z);
+  rig.visible = true;
+  flash.hidden = false;
+  bgm("finale");
+  sfx("boom", { rate: .46, vol: 1.45 });
+  sfx("slam", { rate: .62, vol: .7, delay: .065 });
+  shake(1.2);
+  const point = plateLocal(key);
+  burst(point, [hdr(0xffca73, 3.3), hdr(0xfff5dc, 3.4)], 215, 5.4,
+    { life: 1.2, size: .08, grav: 1.2, up: .65, flat: true, even: true });
+  try {
+    await Promise.all([
+      rippleFromSeat(key),
+      camHome(1850),
+      tween(285, t => { flash.style.opacity = .66 * (1 - t) ** 2; }, ease.linear)
+        .then(() => { flash.hidden = true; }),
+      tween(1530, t => {
+        shake(.58 * (1 - t) ** 2);
+        rig.children.forEach((ring, i) => {
+          const spread = clamp01((t - i * .065) / (1 - i * .065));
+          ring.scale.setScalar(.24 + 14 * spread);
+          ring.material.opacity = spread > 0 ? (.95 - i * .22) * (1 - spread) ** 1.25 : 0;
+        });
+      }, ease.linear),
+    ]);
+  } finally {
+    rig.visible = false;
+    flash.hidden = true;
+  }
+}
+
 // 発表中の席以外で、まだ決まっていない席
 const pendingExcept = list => [...hidden].filter(k => !list.some(x => x.key === k));
 
@@ -669,21 +719,29 @@ const TRAVEL2 = {
     for (let i = 0; i < cards.length; i++) {
       const g = cards[i], { s, key } = list[i];
       const W = seatW(key), side = W.x > 0 ? -1 : 1;
-      const pose = camPoseLook(W.clone().add(v3(side * rand(.8, 1.6), rand(1.4, 2), rand(2.8, 3.3))), W.clone().add(v3(0, .1, 0)));
+      const offset = v3(side * rand(.8, 1.6), rand(1.4, 2), rand(2.8, 3.3));
+      if (frontRowImpact) offset.multiplyScalar(.78);
+      const pose = camPoseLook(W.clone().add(offset), W.clone().add(v3(0, .1, 0)));
       const P = plateLocal(key), p0 = g.position.clone(), s0 = g.scale.x;
       const ctrl = p0.clone().lerp(P, .5).add(v3(0, 2, 1.5));
       sfx("whoosh", { rate: .8 });
       if (i === 0 && cards[1]) tween(400, t => cards[1].position.x = lerp(cards[1].position.x, V.visW * .7, t), ease.in);
+      // 最前列中央では移動の最後の2割に約1秒を使い、着地で通常速度に戻す。
+      const approach = frontRowImpact
+        ? t => t < .43 ? .8 * ease.out(t / .43) : lerp(.8, 1, (t - .43) / .57)
+        : ease.inOut;
       await Promise.all([
-        camGo(pose, 1000),
-        tween(frontRowImpact ? 1000 : 950, t => { g.position.copy(bez(p0, ctrl, P, t)); g.scale.setScalar(lerp(s0, 1, t)); g.rotation.y = Math.sin(t * Math.PI) * .6; }, ease.inOut),
+        camGo(pose, frontRowImpact ? 1700 : 1000, approach),
+        tween(frontRowImpact ? 1700 : 950, t => {
+          g.position.copy(bez(p0, ctrl, P, t));
+          g.scale.setScalar(lerp(s0, 1, t));
+          g.rotation.y = Math.sin(t * Math.PI) * .6;
+        }, approach),
       ]);
       g.rotation.set(0, 0, 0);
       await landCard(g, s, key);
       if (frontRowImpact) {
-        sfx("boom", { rate: .54, vol: 1.05 });
-        shake(.48);
-        await Promise.all([rippleFromSeat(key), camHome(1400)]);
+        await frontRowLandingImpact(key);
         return;
       }
       shake(.05);
@@ -1066,6 +1124,7 @@ function makeRounds(order) {
    演出で初めて使う物が出た瞬間に、描画プログラムの準備で一瞬止まる (カクつく) のを防ぐため、
    起動時に一度ずつ作って準備させ、見えない状態で残しておく */
 async function warmUpShaders() {
+  V.frontImpactRings = buildFrontImpactRings();
   const g = new THREE.Group();
   V.stage.add(g);
   const ufo = stageUfo();
@@ -1103,6 +1162,7 @@ async function warmUpShaders() {
     V.composer.render();
     V.renderer.getContext().finish();
   } finally {
+    V.frontImpactRings.visible = false;
     V.particles.pts.visible = pv;
     V.card.obj.visible = cv;
     V.sparks.pts.visible = sv;

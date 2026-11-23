@@ -14,7 +14,7 @@
 
 const FRONT_ROW = {
   key: `0-${(cols - 1) / 2}`,  // 最前列 (教卓側の1列目) の中央の席
-  src: "media/the_front_row.mp4?v=5",  // 動画を差し替えたら v を上げる
+  src: "media/the_front_row.mp4?v=6",  // 動画を差し替えたら v を上げる
   nameAt: 25.1,               // カフェ16秒 + 教室で紙に名前を出すまでの9.1秒
   x: .500, y: .525,           // 白紙の中心 (映像の矩形に対する割合)
   maxW: .36,                  // 名前の最大幅 (映像の幅に対する割合)
@@ -268,8 +268,6 @@ async function announceFrontRow(key, others = []) {
     await sleep(FRONT_ROW.endHold);   // 名前の出た終了画面を少し見せる
     await frontRowClose(1200);        // ゆっくり暗転
     await frontRowOutro(key, at);
-    // 名前はもう動画で出ているので、カードを出してカメラと一緒に席へ
-    await announcePair([{ s, key }], { intro: "pop", travel: "dive", frontRowImpact: true });
   } else {
     // 再生できなかったときは、すぐ既存の結果表示へ
     await frontRowClose(0);
@@ -280,11 +278,10 @@ async function announceFrontRow(key, others = []) {
     letterbox(false);
     spotFocus(null, 500);
     await dolly(0, null, 500);
-    await announcePair([{ s, key }]);
   }
+  await announcePair([{ s, key }], { intro: "pop", travel: "dive", frontRowImpact: true });
   // 残りの2人は短い演出で一気に
   if (others.length) {
-    bgm("tension");
     await announcePair(others, { intro: "pop", travel: "arc", hold: 600 });
   }
   return result;
