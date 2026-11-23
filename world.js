@@ -1033,9 +1033,10 @@ function setupPicking(canvas) {
     const o = V.seat[key];
     targets.push(o.front, o.back);
   }
-  bindSeatGestures(canvas, e => {
-    if (!document.body.classList.contains("ready")) return;
-    const ndc = new THREE.Vector2(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  const ndc = new THREE.Vector2();
+  bindSeatGestures(canvas, (x, y) => {
+    if (!document.body.classList.contains("ready") || document.elementFromPoint(x, y) !== canvas) return;
+    ndc.set(x / innerWidth * 2 - 1, 1 - y / innerHeight * 2);
     ray.setFromCamera(ndc, V.camera);
     const hit = ray.intersectObjects(targets, false)[0];
     if (hit) return hit.instanceId === undefined ? hit.object.userData.key : realSeatPositions[hit.instanceId];
