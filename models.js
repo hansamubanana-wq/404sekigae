@@ -8,18 +8,27 @@
 // 明るすぎると光がにじんで白く飛ぶので、環境光の映り込みを控えめに
 const stdMat = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: .5, envMapIntensity: .55, ...o });
 
-function disposeGroup(g) {
-  g.traverse(o => {
-    if (o.geometry) o.geometry.dispose();
-    if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { if (m.map && m.map.userData.own) m.map.dispose(); m.dispose(); });
-  });
-}
+const actorPools = new Map();
 
-// 舞台に置いて、毎フレーム update を呼ぶ。remove() で片付け
-function stageActor(g) {
+// 舞台に置いて、毎フレーム update を呼ぶ。remove() で種類別のプールに戻す。
+function stageActor(build, variant) {
+  if (!actorPools.has(build)) actorPools.set(build, new Map());
+  const variants = actorPools.get(build);
+  if (!variants.has(variant)) variants.set(variant, []);
+  const pool = variants.get(variant);
+  const g = pool.pop() || build(variant);
+  g.position.set(0, 0, 0);
+  g.rotation.set(0, 0, 0);
+  g.scale.setScalar(1);
+  g.userData.reset?.();
   V.stage.add(g);
-  const un = addFrameHook((dt, t) => g.userData.update && g.userData.update(t, dt));
-  g.userData.remove = () => { un(); V.stage.remove(g); disposeGroup(g); };
+  const un = g.userData.update && addFrameHook((dt, t) => g.userData.update(t, dt));
+  g.userData.remove = () => {
+    if (!g.parent) return;
+    un?.();
+    g.removeFromParent();
+    pool.push(g);
+  };
   return g;
 }
 
@@ -207,6 +216,7 @@ function buildClock() {
   knob.position.set(0, .62, 0);
   g.add(hammer, knob);
   g.userData.ring = false;
+  g.userData.reset = () => { g.userData.ring = false; hammer.rotation.z = 0; };
   g.userData.update = t => {
     if (g.userData.ring) {
       g.rotation.z = Math.sin(t * 70) * .12;
@@ -257,8 +267,17 @@ function leafTexture(col) {
   return t;
 }
 // 左から右へ吹く (右から左は scale.x = -1)。width はステージの幅
-function buildGust(width, height) {
+function stageGust(direction) {
+  const g = stageActor(buildGust);
+  g.scale.set(direction * V.visW / g.userData.width, V.visH / g.userData.height, 1);
+  return g;
+}
+
+function buildGust() {
+  const width = V.visW, height = V.visH;
   const g = new THREE.Group();
+  g.userData.width = width;
+  g.userData.height = height;
   const streaks = [];
   for (let i = 0; i < 9; i++) {
     const y0 = (Math.random() - .5) * height * .7, z0 = rand(-2, 1);
@@ -303,7 +322,7 @@ function buildGust(width, height) {
       l.visible = u > 0 && u < 1;
     });
   };
-  g.userData.progress(0);
+  g.userData.reset = () => g.userData.progress(0);
   return g;
 }
 

@@ -360,7 +360,7 @@ async function introGlitch(s, label, pool) {
 async function flyRocket(s, key) {
   const c = card(), P = plateLocal(key);
   const W = V.visW, H = V.visH;
-  const rk = stageActor(buildRocket());
+  const rk = stageActor(buildRocket);
   rk.scale.setScalar(1.05);
   rk.position.set(0, -V.visH, 0);
   const UP = v3(0, 1, 0);
@@ -514,16 +514,14 @@ async function flySpiral(s, key) {
 function makeExtraCard(s, label) {
   const src = V.card;
   const g = new THREE.Group();
-  const cv = makeCanvas(1024, 548);
-  drawFace(cv.getContext("2d"), 1024, 548, s, { label });
-  const t = canvasTex(cv);
   const body = new THREE.Mesh(src.body.geometry, src.body.material.clone());
   const rim = new THREE.Mesh(src.rim.geometry, new THREE.MeshBasicMaterial({ color: hdr(HEX[s.gender], 1.7), transparent: true }));
   rim.position.z = 0;   // 本体の厚みの内側に置く (裏から見たとき枠が全面を覆わないように)
-  const front = new THREE.Mesh(src.front.geometry, new THREE.MeshBasicMaterial({ map: t, transparent: true, color: new THREE.Color(.84, .84, .84) }));
+  const front = makeCardFront(src.front.geometry);
+  setCardFront(front, s, label);
   front.position.z = .034;
   g.add(body, rim, front);
-  g.userData.dispose = () => { t.dispose(); body.material.dispose(); rim.material.dispose(); front.material.dispose(); };
+  g.userData.dispose = () => { body.material.dispose(); rim.material.dispose(); front.material.dispose(); front.userData.label.material.dispose(); };
   V.stage.add(g);
   return g;
 }
@@ -636,7 +634,7 @@ async function cutCats() {
   for (let i = 0; i < 30; i++) sfx("step", { vol: .45, delay: i * .14 / TIME_SCALE, rate: 1.5, vary: .3 });
   bubble("ニャー", v3(0, -H * .2, 0), 900);
   const thief = async (from, to, side, fur) => {
-    const cat = stageActor(buildCat(fur));
+    const cat = stageActor(buildCat, fur);
     const dir = d => cat.scale.set(CS * d, CS, CS);
     const Pf = plateLocal(from), Pt = plateLocal(to);
     const off = d => v3(d * .95 * CS, .62 * CS, .25);
@@ -686,8 +684,7 @@ async function cutUfoFleet() {
   const hum = sfx("ufo", { loop: true, vol: .6, rate: .8 });
   dolly(-1.2, null, 700);
   const abduct = async (from, to, side) => {
-    const u = buildUfo();
-    V.stage.add(u.g);
+    const u = stageUfo();
     const Pf = plateLocal(from), Pt = plateLocal(to);
     const above = k => plateLocal(k).add(v3(0, 2.4, 0));
     const start = v3(side * (V.visW * .7 + 2), H * .45, -2);
@@ -711,7 +708,7 @@ async function cutUfoFleet() {
     u.beam.visible = false;
     dropCard(g);
     const p1 = u.g.position.clone();
-    tween(900, t => u.g.position.copy(p1).add(v3(t * 3 * side, t * (H + 4), 0)), ease.in).then(() => { u.unhook(); V.stage.remove(u.g); });
+    tween(900, t => u.g.position.set(p1.x + t * 3 * side, p1.y + t * (H + 4), p1.z), ease.in).then(() => u.remove());
   };
   await Promise.all([abduct(a, b, -1), sleep(250).then(() => abduct(b, a, 1))]);
   if (hum) hum.stop(.6);

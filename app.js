@@ -49,16 +49,28 @@ const ease = {
   back: t => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); },
 };
 
+const activeTweens = new Set();
+
 function tween(ms, fn, e = ease.inOut) {
-  return new Promise(res => {
+  return new Promise((resolve, reject) => {
     const start = performance.now();
+    const managed = worldReady;
     fn(e(0));   // 最初の状態をすぐ反映 (1コマだけ完成形が見えるのを防ぐ)
     function step(now) {
-      const t = Math.min(1, (now - start) * TIME_SCALE / ms);
-      fn(e(t));
-      if (t < 1) requestAnimationFrame(step); else res();
+      try {
+        const t = Math.min(1, Math.max(0, now - start) * TIME_SCALE / ms);
+        fn(e(t));
+        if (t >= 1) {
+          activeTweens.delete(step);
+          resolve();
+        } else if (!managed) requestAnimationFrame(step);
+      } catch (error) {
+        activeTweens.delete(step);
+        reject(error);
+      }
     }
-    requestAnimationFrame(step);
+    if (managed) activeTweens.add(step);
+    else requestAnimationFrame(step);
   });
 }
 
@@ -229,9 +241,10 @@ addEventListener("DOMContentLoaded", () => {
   // 起動時に重い準備を全部済ませる (本番中に止まらないように)。ローディングは長くなってよい
   initWorld()
     .then(async () => {
-      try { warmUpShaders(); } catch (e) { console.warn(e); }
+      try { await warmUpShaders(); } catch (e) { console.warn(e); }
       try { frontRowPreload(); } catch {}
       await Promise.race([soundInit(), sleep(10000)]);   // 効果音の読み込みと変換
+      V.renderer.setAnimationLoop(frame);
       document.body.classList.add("ready");
     })
     .catch(e => {
