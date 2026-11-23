@@ -184,15 +184,11 @@ async function shuffleSeats() {
     const rounds = makeRounds(order);                           // 2人ずつの組 (最後は「最前列中央 + 2人」か「最後の1人」)
     const hasFront = order.includes(FRONT_ROW.key);
     const R = rounds.length;
-    const prog = buildProgram(R);
     resetDecks();
     resetPairDeck(order.length);
     for (let r = 0; r < R; r++) {
-      for (const ev of prog[r] || []) {
-        if (ev.cut === "halfway") await cutHalfway(hidden.size);
-        else if (ev.cut === "tension") { if (!hasFront) await cutTension(hidden.size); }
-        else if (ev.cut) await CUTS[ev.cut]();
-      }
+      if (R >= 6 && r === Math.floor(R / 2)) await cutHalfway(hidden.size);
+      if (!hasFront && R >= 4 && r === R - 2) await cutTension(hidden.size);
       const list = rounds[r].map(key => ({ s: seats[key], key }));
       if (list.some(x => x.key === FRONT_ROW.key)) {
         // 残り3人: 「ラスト3人…」→ 3人を見せる → 動画で最前列の中央を明かす → 残りの2人

@@ -10,13 +10,13 @@
 const BUBBLE_SFX = {
   "…じゃなくて": "wrong", "…ではなく！": "wrong", "いや、ちがう！": "wrong", "ここ…？": "question",
   "あれ？": "question", "！？": "question", "…なんで猫？": "question", "…なんだったんだ": "question",
-  "ニャッ": "pop", "ニャー": "pop", "ニャニャ": "pop", "ドロン": "pop",
+  "ニャッ": "pop", "ニャニャ": "pop", "ドロン": "pop",
   "ビュオォォ！": "windbig", "…ヒュ～": "windbig", "行きすぎ！": "whoosh", "やばっ": "whoosh",
   "分身の術！": "phase", "シュン！": "phase", "どれが本物？": "suspense", "本物はこっち！": "chime",
   "そろ〜り": "step", "ジリリリリ！": "bell", "パカッ！": "boxopen", "ドゥルルルル…": "suspense",
   "ジャーン！": "gong", "ピキッ": "crack", "ピキピキッ": "crack", "ザザッ…": "glitch",
   "…チャンネル調整中": "zap", "どこだ…？": "suspense", "発射！": "thruster", "…なにか来る！": "suspense",
-  "ボヨン": "boing", "ぽよん": "boing", "ボイン": "boing", "停電！？": "down", "…あ、ついた": "switch",
+  "ボヨン": "boing", "ぽよん": "boing", "ボイン": "boing",
 };
 
 function bubble(text, local, ms = 1100) {

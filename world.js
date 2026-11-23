@@ -1104,7 +1104,7 @@ function frame(now) {
 
 function addFrameHook(f) { (V.onFrame ||= new Set()).add(f); return () => V.onFrame.delete(f); }
 
-// 名札と机の光の明るさ (停電など)
+// 名札と舞台の明るさ
 function setPlateDim(k) {
   V.plateDim = k;
   for (const key in V.seat) {

@@ -737,12 +737,12 @@ function makeRounds(order) {
 async function warmUpShaders() {
   const g = new THREE.Group();
   V.stage.add(g);
-  const ufo = stageUfo(), secondUfo = stageUfo();
+  const ufo = stageUfo();
   ufo.beam.visible = true;
   const wind = stageGust(1);
   wind.userData.progress(.5);
   const actors = [
-    wind, ufo.g, secondUfo.g, stageActor(buildRocket), stageActor(buildClock), stageActor(buildZs),
+    wind, ufo.g, stageActor(buildRocket), stageActor(buildClock), stageActor(buildZs),
     ...[0xf2a541, 0x9aa3ad, 0x3a3a3a, 0xf6efe4].map(fur => stageActor(buildCat, fur)),
   ];
   const glass = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), new THREE.ShaderMaterial({
