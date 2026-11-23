@@ -11,6 +11,7 @@ const BGM_FADE = 1.25;
 const BGM_VOLUME = { main: .36, tension: .44, finale: .6 };
 const HOME_BGM_VOLUME = .2;
 const SFX_VOLUME = .85;     // 効果音全体の音量 (BGM とのバランス)
+const MC_RISE_SECONDS = 1.10;
 const BGM = { files: new Map(), request: null, playing: null };
 
 // iPad / iPhone のマナーモードでも鳴らす (Safari 16.4+)
@@ -30,6 +31,7 @@ function soundInit() {
     const comp = SND.ctx.createDynamicsCompressor();
     comp.threshold.value = -14; comp.ratio.value = 4;
     SND.master.connect(comp).connect(SND.ctx.destination);
+    SND.mcTransition = buildMcTransitionSounds(SND.ctx);
     soundLoad();
   }
   return SND.loading || Promise.resolve();
@@ -62,6 +64,10 @@ function sfx(name, o = {}) {
   if (!files) return null;
   const buf = SND.buf[files[Math.floor(Math.random() * files.length)]];
   if (!buf) return null;
+  return playSfxBuffer(buf, o);
+}
+
+function playSfxBuffer(buf, o = {}) {
   const ctx = SND.ctx;
   const src = ctx.createBufferSource();
   src.buffer = buf;
@@ -90,6 +96,44 @@ function sfx(name, o = {}) {
     },
     gain: g.gain,
   };
+}
+
+// ノイズを明るくしながら立ち上げ、発表では低音と短いシンバルを重ねる。
+function buildMcTransitionSounds(ctx) {
+  const rate = ctx.sampleRate;
+  const rise = ctx.createBuffer(1, Math.round(rate * MC_RISE_SECONDS), rate);
+  const hit = ctx.createBuffer(1, Math.round(rate * .52), rate);
+  const ramp = rise.getChannelData(0), strike = hit.getChannelData(0);
+  let low = 0, bright = 0, phase = 0;
+  let seed = 404;
+  const noise = () => {
+    seed = (Math.imul(1664525, seed) + 1013904223) >>> 0;
+    return seed / 2147483648 - 1;
+  };
+  for (let i = 0; i < ramp.length; i++) {
+    const t = i / ramp.length;
+    const white = noise();
+    low += .023 * (white - low);
+    bright += (.08 + .43 * t * t) * (white - low - bright);
+    const envelope = t ** 2.1 * Math.min(1, (1 - t) / .055);
+    ramp[i] = (bright * .69 + white * .17 * t) * envelope;
+  }
+  low = 0;
+  for (let i = 0; i < strike.length; i++) {
+    const t = i / rate;
+    const white = noise();
+    low += .31 * (white - low);
+    phase += 2 * Math.PI * (49 + 104 * Math.exp(-t * 31)) / rate;
+    const envelope = Math.min(1, t / .006, (.52 - t) / .06);
+    strike[i] = envelope * (Math.sin(phase) * .61 * Math.exp(-t * 14) +
+      (white - low) * .40 * Math.exp(-t * 8));
+  }
+  return { rise, hit };
+}
+
+function mcTransitionSfx(name, options) {
+  if (SND.ctx?.state !== "running") return null;
+  return playSfxBuffer(SND.mcTransition[name], options);
 }
 
 // 再生する曲だけを PCM に展開する。

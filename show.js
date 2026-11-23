@@ -781,20 +781,24 @@ async function announce(s, key, index, total, force = {}) {
 /* =========================================================
    スタート / フィナーレ
    ========================================================= */
-async function showStart(movable, announced = false) {
-  V.spotSpeed = 5;
+async function showStart(movable, { announced = false, quick = false } = {}) {
   const b = announced ? null : banner("席替え、スタート！", 1200, "kickoff");
-  veil(true, 300);
+  if (!quick) {
+    V.spotSpeed = 5;
+    veil(true, 300);
+  }
   const order = [...movable].sort((a, b2) => seatXZ(b2).z - seatXZ(a).z);
+  const stagger = quick ? TIME_SCALE * 115 / Math.max(1, order.length - 1) : 20;
+  const duration = quick ? TIME_SCALE * 330 : 480;
   // 名札が後ろの列から次々と裏返る
-  const flips = order.map((key, i) => sleep(i * 20).then(async () => {
-    await flipPlate(key, true, 480);
-  }));
+  const flips = order.map((key, i) => sleep(i * stagger).then(() => flipPlate(key, true, duration, !quick)));
   await Promise.all(flips);
   for (const key of movable) seatLook(key);
   await b;
-  V.spotSpeed = 1;
-  await veil(false, 300);
+  if (!quick) {
+    V.spotSpeed = 1;
+    await veil(false, 300);
+  }
 }
 
 async function orbitClassroom() {
