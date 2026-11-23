@@ -847,22 +847,9 @@ const TRAVEL2 = {
     await dolly(0, null, 500);
   },
 
-  // 猫: 通路を走り、くわえたカードを席へ届ける
+  // 猫: 机伝いに歩き、くわえたカードを決まった机に置く
   async cats(list, cards) {
-    const coats = shuffleArray(CAT_COATS);
-    const deliver = async i => {
-      const { s, key } = list[i];
-      await catDelivery(cards[i], key, i ? 1 : -1, coats[i]);
-      await landCard(cards[i], s, key);
-    };
-    if (cards.length === 2 && V.camera.aspect >= .86) {
-      await withCatView([-1, 1], () => Promise.all([deliver(0), sleep(160).then(() => deliver(1))]));
-    } else {
-      // 縦向きでは1匹ずつ寄って映す。
-      for (let i = 0; i < cards.length; i++) {
-        await withCatView([i ? 1 : -1], () => deliver(i));
-      }
-    }
+    await deliverCatCards(list, cards);
   },
 
   // フェイント: 1枚が違う席に降りかけて「…ではなく！」

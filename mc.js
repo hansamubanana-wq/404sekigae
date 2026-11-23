@@ -1,9 +1,9 @@
 "use strict";
 
 const MC_LINES = [
-  { at: .19, text: "皆さん、お待たせしました！" },
-  { at: 3.67, text: "404席替え、ただいまスタート！" },
-  { at: 11.07, text: "さあ、最初の発表は……" },
+  { at: .19, text: "Ladies and gentlemen!" },
+  { at: 3.67, text: "The 404 seat shuffle starts NOW!" },
+  { at: 11.07, text: "And first up is…" },
 ];
 const MC_SHORT_AT = 10.76;
 const MC_FANFARE_AT = 8.23;
@@ -13,13 +13,13 @@ const MC_END = 13.34;
 const MC_WALK_END = 4.14;
 const MC_SEEN_KEY = "404-mc-intro-seen";
 const MC_REACTIONS = {
-  good: "いいね！",
-  nice: "ナイス！",
-  oh: "おおー！",
-  wow: "ワオ！",
-  yes: "よし！",
-  next: "さあ、次！",
-  unbelievable: "信じられない！",
+  good: "GOOD!!",
+  nice: "NICE ONE!!",
+  oh: "OHHH!!",
+  wow: "WOW!!",
+  yes: "YES!!",
+  next: "NEXT UP!!",
+  unbelievable: "UNBELIEVABLE!!",
 };
 const MC_CASUAL_REACTIONS = ["good", "nice", "oh", "wow", "yes", "next"];
 let mcHost = null;
@@ -46,7 +46,7 @@ async function loadMcHost() {
     Promise.all(Object.keys(MC_REACTIONS).map(async name =>
       [name, await decodeMcVoice(ctx, `media/mc/react/${name}.m4a`)]
     )).then(Object.fromEntries),
-    document.fonts.load('900 32px "MC Noto Sans JP"', "司会" + [...MC_LINES.map(line => line.text), ...Object.values(MC_REACTIONS)].join("")),
+    document.fonts.load('900 32px "MC Noto Sans"', "MC"),
   ]);
   const host = buildMcModel(mergeGeometries);
   host.voice = voice;

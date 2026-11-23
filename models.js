@@ -114,138 +114,173 @@ function buildCat(color) {
   g.add(shadow, torso);
   let gait = 0;
   g.userData.mouth = mouth;
-  g.userData.reset = () => { gait = 0; g.userData.run = false; };
+  g.userData.reset = () => {
+    gait = 0;
+    g.userData.run = false;
+    g.userData.jump = g.userData.nod = 0;
+    g.userData.search = false;
+  };
   g.userData.update = (t, dt) => {
-    const running = g.userData.run;
-    if (running) gait += dt * 22;
+    const { run, jump, nod, search } = g.userData;
+    if (run) gait += dt * 25;
     for (const { leg, phase } of legs) {
       const stride = gait + phase;
-      leg.rotation.z = running ? .64 * Math.sin(stride) : 0;
-      leg.position.y = .30 + (running ? .085 * Math.max(0, Math.cos(stride)) : 0);
+      leg.rotation.z = run ? .48 * Math.sin(stride) : .32 * phase / Math.PI * jump;
+      leg.position.y = .30 + .18 * jump + (run ? .14 * Math.abs(Math.sin(stride)) : 0);
     }
-    torso.position.y = running ? .035 * Math.abs(Math.sin(gait)) : 0;
-    head.rotation.z = running ? .075 * Math.sin(gait) : .045 * Math.sin(t * 5);
-    head.rotation.y = .13 + .18 * Math.sin(t * 2.5);
+    torso.position.y = run ? .025 * Math.abs(Math.sin(gait)) : 0;
+    head.position.y = .59 - .327 * nod;
+    head.rotation.z = run ? .030 * Math.sin(gait) : -.46 * nod;
+    head.rotation.y = search ? .29 * Math.sin(t * 20) : .055 * Math.sin(t * 4);
     tail.rotation.y = .35 * Math.sin(t * 5);
     tail.rotation.z = .13 * Math.sin(t * 6);
   };
   return g;
 }
 
-const CAT_ENTRY = 4.30;
-const CAT_INNER = 1.45;
-const CAT_AISLE = (rows - 1) / 2 * SZ + 1.13;
-
-// 通路側のカメラに切り替え、方向転換で伸びるしっぽまで画角に入れる。
-async function withCatView(sides, deliver) {
-  const paired = sides.length > 1;
-  const center = paired ? 0 : sides[0] * (CAT_ENTRY + CAT_INNER) / 2;
-  const halfRun = paired ? CAT_ENTRY : (CAT_ENTRY - CAT_INNER) / 2;
-  const aim = v3(center, .55, CAT_AISLE + .25);
-  const pose = () => {
+// 同じ列の1〜2台隣から来る。浮いている名札を避けるため天板の奥を通る。
+async function catDelivery(card, key, coat) {
+  const { x, z } = seatXZ(key);
+  const [row, col] = key.split("-").map(Number);
+  const neighbors = [-1, 1].filter(d => realSeatPositions.includes(`${row}-${col + d}`));
+  const far = neighbors.filter(d => realSeatPositions.includes(`${row}-${col + d * 2}`));
+  const side = pick(far.length ? far : neighbors) ?? -1;
+  const hops = far.length ? 2 : neighbors.length ? 1 : 0;
+  const dir = -side;
+  const start = x + side * SX * hops;
+  const level = DESK_SURFACE_Y + .008;
+  const lane = z - .23;
+  const cat = stageActor(buildCat, coat);
+  V.scene.add(cat);
+  cat.visible = false;
+  cat.scale.setScalar(.58);
+  cat.position.set(hops ? start : x + side * .18, level, lane);
+  cat.rotation.y = dir > 0 ? 0 : Math.PI;
+  const motion = cat.userData;
+  const aim = v3();
+  const eye = v3();
+  const view = new THREE.Matrix4();
+  const yaw = Math.atan2(dir * .53, -1);
+  const carryTurn = new THREE.Quaternion().setFromAxisAngle(v3(0, 1, 0), yaw);
+  const pitchAxis = v3(1);
+  const gripTurn = new THREE.Quaternion(), worldTurn = new THREE.Quaternion();
+  const gripOffset = v3(), grip = v3(), contact = v3();
+  const scale = .31;
+  const halfCardHeight = (FACE_H + .14) / 2;
+  const contactTilt = -Math.PI / 2 + .078;
+  let tilt = -.27;
+  const cameraAt = (pos, quat) => {
     const { aspect, fov } = V.camera;
     const halfFov = Math.tan(THREE.MathUtils.degToRad(fov / 2));
-    const distance = Math.max(4.9, (halfRun + 1.24) / (halfFov * aspect * .86) + .76);
-    return camPoseLook(v3(center, aim.y + .34 * distance, aim.z + .94 * distance), aim);
+    const distance = Math.max(2.85, .76 / (halfFov * Math.min(aspect, 1) * .83));
+    const depth = Math.min(3.25, distance * .60);
+    const lateral = dir * depth * .53;
+    aim.set(cat.position.x + dir * .07, .74, z - .07);
+    pos.set(aim.x + lateral, aim.y + Math.sqrt(distance ** 2 - depth ** 2 - lateral ** 2), aim.z - depth);
+    quat.setFromRotationMatrix(view.lookAt(pos, aim, V.camera.up));
   };
-  await camGo(pose(), 420);
-  const resize = () => {
-    const next = pose();
-    CAM.pos.copy(next.pos);
-    CAM.quat.copy(next.quat);
+  const positionCard = (anchor, edge) => {
+    worldTurn.copy(carryTurn).multiply(gripTurn.setFromAxisAngle(pitchAxis, tilt));
+    gripOffset.set(0, edge * scale * halfCardHeight, 0).applyQuaternion(worldTurn).add(anchor);
+    card.position.copy(V.stage.worldToLocal(gripOffset));
+    card.quaternion.copy(V.stage.quaternion).invert().multiply(worldTurn);
   };
-  addEventListener("resize", resize);
-  resize();
+  const walk = async end => {
+    const from = cat.position.x;
+    const ms = 72 + Math.abs(end - from) * 220;
+    motion.run = true;
+    sfx("step", { vol: .19, rate: 1.65, vary: .13 });
+    await tween(ms, t => {
+      cat.position.x = lerp(from, end, t);
+      cameraAt(CAM.pos, CAM.quat);
+    }, ease.linear);
+    motion.run = false;
+  };
+
+  let stopFollowing, resize;
   try {
-    await deliver();
+    const shot = { pos: eye, quat: new THREE.Quaternion() };
+    cameraAt(shot.pos, shot.quat);
+    await camGo(shot, 290);
+    cameraAt(CAM.pos, CAM.quat);
+    resize = () => {
+      cameraAt(CAM.pos, CAM.quat);
+      V.camRig();
+    };
+    addEventListener("resize", resize);
+    cat.visible = true;
+    card.scale.setScalar(scale);
+    positionCard(motion.mouth.getWorldPosition(grip), -1);
+    card.visible = true;
+    let carrying = true;
+    stopFollowing = addFrameHook(() => {
+      if (carrying) positionCard(motion.mouth.getWorldPosition(grip), -1);
+      else positionCard(contact, 1);
+    });
+    for (let i = 0; i < hops; i++) {
+      const desk = start + dir * i * SX;
+      if (i > 0) {
+        // 隣の席で一瞬迷い、首を振ってから次の机へ進む。
+        await walk(desk);
+        motion.search = true;
+        await sleep(135);
+        motion.search = false;
+      }
+      const takeoff = desk + dir * .50;
+      const touchdown = desk + dir * (SX - .50);
+      await walk(takeoff);
+      await tween(205, t => {
+        motion.jump = Math.sin(t * Math.PI);
+        cat.position.set(lerp(takeoff, touchdown, t), level + .23 * motion.jump, lane);
+        cameraAt(CAM.pos, CAM.quat);
+      }, ease.linear);
+      motion.jump = 0;
+    }
+    await walk(x - dir * .30);
+    await tween(315, t => {
+      tilt = lerp(-.27, contactTilt, ease.out(t));
+      motion.nod = ease.in(t);
+      cat.position.z = lerp(lane, z - .085, t);
+    }, ease.linear);
+    // 札の下端が机に触れてから離し、その端を支点に寝かせる。
+    card.localToWorld(contact.set(0, -halfCardHeight, 0));
+    carrying = false;
+    sfx("step", { vol: .22, rate: .76, pan: .05 * dir });
+    await tween(240, t => {
+      tilt = lerp(contactTilt, -Math.PI / 2, clamp01(t * 2.7));
+      motion.nod = 1 - t;
+    }, ease.inOut);
   } finally {
-    removeEventListener("resize", resize);
-    await camHome(460);
+    stopFollowing?.();
+    if (resize) removeEventListener("resize", resize);
+    cat.userData.remove();
   }
 }
 
-// 猫は後ろの列の外の通路を使い、カードだけが名札の上を通る。
-async function catDelivery(card, key, side, coat) {
-  const cat = stageActor(buildCat, coat);
-  V.scene.add(cat);
-  cat.scale.setScalar(1.15);
-  const aisle = CAT_AISLE;
-  const edge = CAT_ENTRY;
-  const inward = side < 0 ? 0 : Math.PI;
-  cat.position.set(side * edge, 0, aisle);
-  cat.rotation.y = inward;
-  const mouth = cat.userData.mouth;
-  const cardStart = card.position.clone();
-  const carryAt = v3(), pickup = v3();
-  const scale = card.scale.x, carryScale = .49;
-  const feet = ms => {
-    for (let i = 0; i < ms / 180; i++) sfx("step", { vol: .36, delay: i * .18 / TIME_SCALE, rate: 1.55, vary: .2 });
-  };
-  const mouthAt = point => V.stage.worldToLocal(mouth.getWorldPosition(point));
-  let carrying = false;
-  const follow = addFrameHook((dt, t) => {
-    if (!carrying) return;
-    card.position.copy(mouthAt(carryAt));
-    card.rotation.z = cat.userData.run ? .07 * Math.sin(t * 20) : 0;
-  });
-  const walk = (x, ms) => {
-    const start = cat.position.x;
-    cat.userData.run = true;
-    feet(ms);
-    return tween(ms, t => { cat.position.x = lerp(start, x, t); })
-      .then(() => { cat.userData.run = false; });
-  };
-  const turn = (angle, ms) => {
-    const from = cat.rotation.y;
-    return tween(ms, t => {
-      cat.rotation.y = lerp(from, angle, t);
-      // 横向きになるときは、しっぽの長さも含めて机から離す。
-      cat.position.z = aisle + .66 * Math.sin(Math.PI * t);
-    });
-  };
+async function deliverCatCards(list, cards) {
+  const coats = shuffleArray(CAT_COATS);
+  const hiddenFaces = [...hidden].map(key => V.seat[key].front);
+  const desktop = V.deskParts.top.material;
+  const roughness = desktop.roughness;
+  desktop.roughness = .54;
+  // 教室の反対側から見るカットなので、裏返した未発表の名前は見えないようにする。
+  for (const face of hiddenFaces) face.visible = false;
+  cards.forEach(card => { card.visible = false; });
   try {
-    cat.position.x = side * 2.45;
-    mouthAt(pickup);
-    cat.position.x = side * edge;
-    await Promise.all([
-      walk(side * 2.45, 740),
-      tween(740, t => {
-        card.position.lerpVectors(cardStart, pickup, t);
-        card.scale.setScalar(lerp(scale, carryScale, t));
-      }),
-    ]);
-    carrying = true;
-    bubble("ニャッ", V.stage.worldToLocal(v3(cat.position.x, 1.45, aisle)), 700);
-    await walk(side * 1.77, 280);
-    await sleep(170);
-    await turn(inward + Math.PI, 230);
-    await walk(side * 2.87, 360);
-    await sleep(140);
-    await turn(inward, 240);
-    await walk(side * CAT_INNER, 410);
-    carrying = false;
-
-    const { x, z } = seatXZ(key);
-    const target = plateLocal(key);
-    const lift = V.stage.worldToLocal(v3(cat.position.x, 2.45, aisle));
-    const above = V.stage.worldToLocal(v3(x, 2.45, z + .12));
-    const held = card.position.clone(), roll = card.rotation.z;
-    await tween(370, t => {
-      card.position.lerpVectors(held, lift, t);
-      card.rotation.z = lerp(roll, 0, t);
-    }, ease.out);
-    await Promise.all([
-      tween(420, t => card.position.lerpVectors(lift, above, t), ease.inOut)
-        .then(() => tween(340, t => {
-          card.position.lerpVectors(above, target, t);
-          card.scale.setScalar(lerp(carryScale, 1, t));
-        }, ease.in)),
-      turn(inward + Math.PI, 300)
-        .then(() => walk(side * edge, 850)),
-    ]);
+    for (let i = 0; i < list.length; i++) {
+      const { s, key } = list[i];
+      await catDelivery(cards[i], key, coats[i]);
+      cards[i].visible = false;
+      V.seat[key].front.visible = true;
+      await land(s, key, "place");
+    }
   } finally {
-    follow();
-    cat.userData.remove();
+    try {
+      await camHome(400);
+    } finally {
+      desktop.roughness = roughness;
+      for (const face of hiddenFaces) face.visible = true;
+    }
   }
 }
 

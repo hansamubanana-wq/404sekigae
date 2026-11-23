@@ -345,7 +345,7 @@ body.letterbox::before, body.letterbox::after { transform: none; }
 
 /* ===== 司会者 ===== */
 @font-face {
-  font-family: "MC Noto Sans JP";
+  font-family: "MC Noto Sans";
   src: url("media/mc/subtitles.woff2") format("woff2");
   font-weight: 900;
   font-display: swap;
@@ -381,7 +381,7 @@ body.letterbox::before, body.letterbox::after { transform: none; }
   overflow: hidden;
   background: #000;
   color: #fff;
-  font: 900 clamp(18px, 3.2vw, 39px)/1.38 "MC Noto Sans JP", "Hiragino Sans", sans-serif;
+  font: 900 clamp(18px, 3.2vw, 39px)/1.38 "MC Noto Sans", sans-serif;
   letter-spacing: .015em;
   text-align: center;
   -webkit-text-stroke: .025em #000;
