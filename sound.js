@@ -5,7 +5,7 @@
    sfx("名前") で鳴らす。同じ名前に複数の音があるときはランダムに選ぶ
    ========================================================= */
 
-const SND = { ctx: null, master: null, music: null, list: null, buf: {}, loading: null };
+const SND = { ctx: null, master: null, music: null, reactionMusic: null, list: null, buf: {}, loading: null };
 const BGM_FILES = { main: "media/bgm_main.m4a", tension: "media/bgm_tension.m4a", finale: "media/bgm_finale.m4a" };
 const BGM_FADE = 1.25;
 const BGM_VOLUME = { main: .36, tension: .44, finale: .6 };
@@ -26,7 +26,8 @@ function soundInit() {
     SND.master = SND.ctx.createGain();
     SND.master.gain.value = .9;
     SND.music = SND.ctx.createGain();
-    SND.music.connect(SND.master);
+    SND.reactionMusic = SND.ctx.createGain();
+    SND.music.connect(SND.reactionMusic).connect(SND.master);
     // 大きな音が重なっても割れないように軽くコンプレッサーをかける
     const comp = SND.ctx.createDynamicsCompressor();
     comp.threshold.value = -14; comp.ratio.value = 4;
@@ -223,6 +224,12 @@ function bgmDuck(ducked, level = 0) {
   if (!SND.music) return;
   const now = SND.ctx.currentTime;
   SND.music.gain.setTargetAtTime(ducked ? level : 1, now, ducked ? .02 : .12);
+}
+
+function bgmReactionDuck(ducked, start = SND.ctx.currentTime) {
+  const volume = SND.reactionMusic.gain;
+  volume.cancelScheduledValues(SND.ctx.currentTime);
+  volume.setTargetAtTime(ducked ? .69 : 1, start, ducked ? .035 : .13);
 }
 
 // 画面の左右位置 (ステージ座標の x) から左右の定位を決める

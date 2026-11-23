@@ -211,6 +211,13 @@ function placeMcArm(host, arm, x, y, z) {
   arm.palm.quaternion.copy(arm.lower.quaternion);
 }
 
+function aimMcMic(host) {
+  // マイクの先を口の横に向け、正面から表情が見えるようにする。
+  const { palm } = host.arms[0];
+  host.axis.set(.006, 1.565, .30).sub(palm.position).applyQuaternion(host.armRotation.copy(palm.quaternion).invert()).normalize();
+  host.mic.quaternion.setFromUnitVectors(host.up, host.axis);
+}
+
 function poseMc(host, t, distance, walking, voice, cameraAngle = 0) {
   const phase = distance * Math.PI * 2 / 1.16;
   const sway = walking * Math.sin(phase);
@@ -236,10 +243,7 @@ function poseMc(host, t, distance, walking, voice, cameraAngle = 0) {
   const free = host.arms[1];
   free.open.visible = Math.max(welcome, reveal) > .35 && fist < .40;
   free.fist.visible = !free.open.visible;
-  // マイクの先端を顔に向ける。口は正面から見えるよう少し横にずらす。
-  const { palm } = host.arms[0];
-  host.axis.set(.006, 1.565, .30).sub(palm.position).applyQuaternion(host.armRotation.copy(palm.quaternion).invert()).normalize();
-  host.mic.quaternion.setFromUnitVectors(host.up, host.axis);
+  aimMcMic(host);
 
   const glance = walking * THREE.MathUtils.clamp(cameraAngle * .72, -.69, .65);
   host.head.rotation.set(-.031 * voice - .050 * fist, glance - .09 * reveal, .07 * welcome + sway * .034 - .08 * fist);
@@ -254,4 +258,29 @@ function poseMc(host, t, distance, walking, voice, cameraAngle = 0) {
   host.smile.scale.y = .72 + .48 * voice;
   host.mouth.visible = !host.smile.visible;
   host.mouth.scale.set(1 + .17 * welcome + .14 * fist, .19 + .91 * voice + .13 * welcome, 1);
+}
+
+function poseMcWaiting(host, t, voice, gesture, strong) {
+  const sway = Math.sin(t * 1.65);
+  host.body.position.y = .012 + .012 * sway;
+  host.body.rotation.z = .028 * sway - .035 * gesture;
+  for (const { hip, knee, foot } of host.legs) hip.rotation.x = knee.rotation.x = foot.rotation.x = 0;
+
+  placeMcArm(host, host.arms[0], lerp(-.339, -.155, gesture), lerp(.84, 1.443, gesture), lerp(.03, .36, gesture));
+  placeMcArm(host, host.arms[1], .35 + .16 * gesture, .84 + (strong ? .62 : .31) * gesture, .06 + .18 * gesture);
+  const free = host.arms[1];
+  free.open.visible = gesture > .35 && !strong;
+  free.fist.visible = !free.open.visible;
+  aimMcMic(host);
+
+  host.head.rotation.set(-.025 * sway - .09 * gesture, .09 * Math.sin(t * .73), .026 * sway);
+  const blink = clamp01(Math.abs(t % 3.83 - 3.42) / .082);
+  for (const { eye, brow, side } of host.eyes) {
+    eye.scale.y = Math.max(.07, blink * (1 + .10 * voice));
+    brow.position.y = .168 + .034 * gesture;
+    brow.rotation.z = side * .17 * gesture;
+  }
+  host.smile.visible = false;
+  host.mouth.visible = true;
+  host.mouth.scale.set(1 + .13 * gesture, .19 + .94 * voice, 1);
 }

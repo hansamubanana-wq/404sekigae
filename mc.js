@@ -12,22 +12,50 @@ const MC_RISE_AT = 12.68;
 const MC_END = 13.34;
 const MC_WALK_END = 4.14;
 const MC_SEEN_KEY = "404-mc-intro-seen";
+const MC_REACTIONS = {
+  good: "いいね！",
+  nice: "ナイス！",
+  oh: "おおー！",
+  wow: "ワオ！",
+  yes: "よし！",
+  next: "さあ、次！",
+  unbelievable: "信じられない！",
+};
+const MC_CASUAL_REACTIONS = ["good", "nice", "oh", "wow", "yes", "next"];
 let mcHost = null;
 let mcSeen = false;
+let mcShow = null;
+
+async function decodeMcVoice(ctx, path) {
+  if (!ctx) return null;
+  try {
+    const response = await fetch(path);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await ctx.decodeAudioData(await response.arrayBuffer());
+  } catch (error) {
+    console.warn(`司会者の声を読み込めませんでした (${path})`, error);
+    return null;
+  }
+}
 
 async function loadMcHost() {
   const ctx = SND.ctx;
-  if (!ctx) return null;
-  const [voice, { mergeGeometries }] = await Promise.all([
-    fetch("media/mc/voice.m4a").then(response => {
-      if (!response.ok) throw new Error(`MC voice: ${response.status}`);
-      return response.arrayBuffer();
-    }).then(data => ctx.decodeAudioData(data)),
+  const [voice, { mergeGeometries }, reactions] = await Promise.all([
+    decodeMcVoice(ctx, "media/mc/voice.m4a"),
     import("three/addons/utils/BufferGeometryUtils.js"),
-    document.fonts.load('900 32px "MC Noto Sans JP"', "司会" + MC_LINES.map(line => line.text).join("")),
+    Promise.all(Object.keys(MC_REACTIONS).map(async name =>
+      [name, await decodeMcVoice(ctx, `media/mc/react/${name}.m4a`)]
+    )).then(Object.fromEntries),
+    document.fonts.load('900 32px "MC Noto Sans JP"', "司会" + [...MC_LINES.map(line => line.text), ...Object.values(MC_REACTIONS)].join("")),
   ]);
   const host = buildMcModel(mergeGeometries);
   host.voice = voice;
+  host.reactions = reactions;
+  if (ctx) {
+    host.reactionMeter = ctx.createAnalyser();
+    host.reactionMeter.fftSize = 256;
+    host.reactionWave = new Float32Array(host.reactionMeter.fftSize);
+  }
   host.armRotation = new THREE.Quaternion();
   // 教卓の幅は3.4。左端の外を通って黒板側へ回り、最後は生徒側を向く。
   host.path = new THREE.CatmullRomCurve3([
@@ -42,6 +70,120 @@ async function loadMcHost() {
   host.path.getPointAt(1, host.actor.position);
   poseMc(host, 0, 0, 0, 0);
   return host;
+}
+
+function mcVoiceLevel(meter, wave) {
+  meter.getFloatTimeDomainData(wave);
+  let energy = 0;
+  for (const sample of wave) energy += sample * sample;
+  return Math.min(1, Math.sqrt(energy / wave.length) * 6);
+}
+
+function beginMcShow() {
+  const host = mcHost;
+  if (!host) return;
+  const caption = document.getElementById("mcReaction");
+  mcShow = {
+    host, caption, text: caption.querySelector(".mc-text"), signVisible: V.podiumSign.visible,
+    untilReaction: randInt(3, 4), deck: new Deck(MC_CASUAL_REACTIONS),
+    last: null, reaction: null, voiceLevel: 0,
+    center: host.path.getPointAt(1).add(v3(0, 1.1, 0)),
+  };
+  host.path.getPointAt(1, host.actor.position);
+  host.actor.rotation.y = 0;
+  host.actor.visible = true;
+  V.podiumSign.visible = false;
+  const draw = addFrameHook(updateMcShow);
+  function onHidden() {
+    if (document.hidden) stopMcReaction();
+  }
+  const ctx = SND.ctx;
+  function onAudioState() {
+    if (ctx.state !== "running") stopMcReaction();
+  }
+  document.addEventListener("visibilitychange", onHidden);
+  ctx?.addEventListener("statechange", onAudioState);
+  mcShow.cleanup = () => {
+    draw();
+    document.removeEventListener("visibilitychange", onHidden);
+    ctx?.removeEventListener("statechange", onAudioState);
+  };
+}
+
+function updateMcShow(dt, t) {
+  const { host, center, caption, reaction } = mcShow;
+  // 教卓の近くまで寄るカットでは、司会者が大きく写って発表を遮るのを防ぐ。
+  host.actor.visible = V.camera.position.distanceToSquared(center) >= 4.8 ** 2;
+  const elapsed = reaction ? SND.ctx.currentTime - reaction.start : -1;
+  const speaking = elapsed >= 0 && elapsed < reaction.source.buffer.duration;
+  if (caption.hidden === speaking) caption.hidden = !speaking;
+  const energy = speaking ? mcVoiceLevel(host.reactionMeter, host.reactionWave) : 0;
+  mcShow.voiceLevel = lerp(mcShow.voiceLevel, energy, 1 - Math.exp(-32 * dt / TIME_SCALE));
+  const gesture = speaking
+    ? ease.out(clamp01(elapsed / .14)) * ease.out(clamp01((reaction.source.buffer.duration - elapsed) / .21))
+    : 0;
+  if (host.actor.visible) poseMcWaiting(host, t, mcShow.voiceLevel, gesture, !!reaction?.strong);
+}
+
+function mcSeatLanded(key) {
+  if (!mcShow) return;
+  if (key === FRONT_ROW.key) {
+    playMcReaction("unbelievable", true, .20);
+    mcShow.untilReaction = randInt(3, 4);
+  } else if (--mcShow.untilReaction <= 0 && hidden.size && !mcShow.reaction) {
+    const name = mcShow.deck.draw(name => name !== mcShow.last && mcShow.host.reactions[name]);
+    playMcReaction(name);
+    mcShow.untilReaction = randInt(3, 4);
+  }
+}
+
+function playMcReaction(name, strong = false, delay = 0) {
+  const ctx = SND.ctx;
+  const buffer = mcShow?.host.reactions[name];
+  if (!buffer || ctx.state !== "running" || document.hidden) return;
+  stopMcReaction();
+  const show = mcShow;
+  const source = ctx.createBufferSource();
+  const gain = ctx.createGain();
+  const start = ctx.currentTime + delay;
+  source.buffer = buffer;
+  gain.gain.value = strong ? .95 : .84;
+  source.connect(gain).connect(SND.master);
+  source.connect(show.host.reactionMeter);
+  show.reaction = { source, gain, start, strong };
+  show.last = name;
+  show.text.textContent = MC_REACTIONS[name];
+  source.onended = () => {
+    source.disconnect();
+    gain.disconnect();
+    if (show.reaction?.source === source) {
+      show.reaction = null;
+      show.caption.hidden = true;
+      bgmReactionDuck(false);
+    }
+  };
+  source.start(start);
+  bgmReactionDuck(true, start);
+}
+
+function stopMcReaction() {
+  if (!mcShow?.reaction) return;
+  const { source, gain } = mcShow.reaction;
+  mcShow.reaction = null;
+  mcShow.caption.hidden = true;
+  const now = SND.ctx.currentTime;
+  gain.gain.setTargetAtTime(0, now, .012);
+  source.stop(now + .045);
+  bgmReactionDuck(false);
+}
+
+function endMcShow() {
+  if (!mcShow) return;
+  stopMcReaction();
+  mcShow.cleanup();
+  mcShow.host.actor.visible = false;
+  V.podiumSign.visible = mcShow.signVisible;
+  mcShow = null;
 }
 
 async function warmUpMc(host) {
@@ -100,7 +242,7 @@ function mcCamera(rig, actor, t, short, offset, end) {
 
 async function playMcIntro(unlocked) {
   const host = mcHost;
-  if (!host) return null;
+  if (!host?.voice) return null;
   await Promise.race([unlocked, new Promise(resolve => setTimeout(resolve, 650))]);
   const ctx = SND.ctx;
   if (ctx.state !== "running" || document.hidden) return null;
@@ -152,10 +294,7 @@ async function playMcIntro(unlocked) {
     const walking = (1 - ease.out(clamp01((t - 3.90) / .24))) * clamp01(t / .28);
     const distance = host.routeLength * pace;
     const inSpeech = t >= MC_LINES[0].at && t < host.voice.duration;
-    meter.getFloatTimeDomainData(wave);
-    let energy = 0;
-    for (const sample of wave) energy += sample * sample;
-    const speaking = inSpeech ? Math.min(1, Math.sqrt(energy / wave.length) * 6) : 0;
+    const speaking = inSpeech ? mcVoiceLevel(meter, wave) : 0;
     voiceLevel = lerp(voiceLevel, speaking, .47);
     const wide = mcCamera(rig, host.actor, t, short, offset, end);
     const angle = Math.atan2(camera.position.x - host.actor.position.x, camera.position.z - host.actor.position.z) - host.actor.rotation.y;
