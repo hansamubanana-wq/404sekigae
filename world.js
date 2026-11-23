@@ -23,7 +23,9 @@ const PLATE_Y = 1.02;                 // 名札の高さ
 const STAGE_D = 9;                    // カメラからステージまでの距離
 const PITCH = 42;                     // カメラの見下ろし角
 
-const QUALITY = new URLSearchParams(location.search).get("q") === "low" ? "low" : "high";
+const renderOptions = new URLSearchParams(location.search);
+const QUALITY = renderOptions.get("q") === "low" ? "low" : "high";
+const TARGET_FPS = renderOptions.get("fps") === "30" ? 30 : 60;
 
 const v3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -87,7 +89,7 @@ function drawFace(ctx, W, H, s, o = {}) {
       ctx.fillStyle = mixHex(col, "#ffffff", .55);
       ctx.fillText(String(s.no), H * .13, H * .2);
     }
-    if (o.label) {
+    if (o.label && !o.separateLabel) {
       ctx.textAlign = "center";
       ctx.font = `900 ${H * .12}px ${FONT}`;
       ctx.fillStyle = CSS.gold;
@@ -208,26 +210,49 @@ varying vec3 vW;
 void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }
 `;
 
-// 奥のスクリーン: 星雲とオーロラ
-const WALL_FRAG = GLSL_NOISE + `
-uniform float uTime, uDim; uniform vec3 uTint; varying vec3 vW;
+// 星雲とオーロラのノイズを、壁の座標のまま時系列のアトラスに焼く。
+const WALL_BAKE_FRAG = GLSL_NOISE + `
+varying vec2 vUv;
 void main(){
-  vec2 p = vW.xy * vec2(.07, .09);
-  float t = uTime * .04;
+  vec2 tile = min(floor(vUv * 4.0), 3.0);
+  vec2 xy = fract(vUv * 4.0) * vec2(90.0, 30.0) - vec2(45.0, 0.0);
+  vec2 p = xy * vec2(.07, .09);
+  float t = (tile.y * 4.0 + tile.x) * .12;
   float n  = fbm(vec3(p*2.0, t));
   float n2 = fbm(vec3(p*3.4 + n, t*1.3 + 5.0));
-  vec3 col = mix(vec3(.010,.012,.040), vec3(.030,.030,.110), smoothstep(0.0, 14.0, vW.y));
+  vec3 col = mix(vec3(.010,.012,.040), vec3(.030,.030,.110), smoothstep(0.0, 14.0, xy.y));
   col += vec3(.18,.06,.42) * smoothstep(.45,.95,n) * .9;
   col += vec3(.02,.30,.45) * smoothstep(.55,1.0,n2) * .8;
   col += vec3(.60,.08,.38) * smoothstep(.70,1.05,n*n2*1.9) * .7;
+  col += vec3(.25,.35,1.0) * exp(-xy.y * 2.2) * .5;
+  gl_FragColor = vec4(col, smoothstep(.35, .9, fbm(vec3(xy.x*.264, t*2.5, 1.0))));
+}
+`;
+
+const WALL_FRAG = `
+uniform float uTime, uDim; uniform vec3 uTint;
+uniform sampler2D uWall;
+uniform float uWallFrame;
+varying vec3 vW;
+float hash(vec3 p){ p = fract(p*0.3183099 + .1); p *= 17.0; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
+vec4 wallFrame(float frame, vec2 xy){
+  vec2 tile = vec2(mod(frame, 4.0), floor(frame / 4.0));
+  vec2 edge = .5 / vec2(256.0, 128.0);
+  return texture2D(uWall, (tile + clamp(xy, edge, 1.0 - edge)) * .25);
+}
+void main(){
+  vec2 xy = vW.xy / vec2(90.0, 30.0) + vec2(.5, 0.0);
+  float frame = floor(uWallFrame);
+  vec4 baked = mix(wallFrame(frame, xy), wallFrame(min(15.0, frame + 1.0), xy), fract(uWallFrame));
+  vec3 col = baked.rgb;
   float x = vW.x * .12;
-  float curtain = smoothstep(.35, .9, fbm(vec3(x*2.2, t*2.5, 1.0))) * exp(-pow((vW.y - 5.5 - 1.6*sin(x*2.0 + uTime*.15)) / 2.6, 2.0));
+  float height = (vW.y - 5.5 - 1.6*sin(x*2.0 + uTime*.15)) / 2.6;
+  float curtain = baked.a * exp(-height * height);
   col += vec3(.10,.90,.62) * curtain * .45;
   vec2 sp = vW.xy * 5.0; vec2 id = floor(sp); float h = hash(vec3(id, 1.0));
   vec2 jit = vec2(hash(vec3(id, 2.0)), hash(vec3(id, 3.0))) - .5;
   float star = step(.982, h) * (1.0 - smoothstep(.0, .09, length(fract(sp) - .5 - jit*.6))) * (.4 + .6*sin(uTime*2.0 + h*90.0));
   col += star * vec3(.85,.9,1.0) * .8;
-  col += vec3(.25,.35,1.0) * exp(-vW.y * 2.2) * .5;
   gl_FragColor = vec4(col * uDim * uTint, 1.0);
 }
 `;
@@ -286,6 +311,9 @@ void main(){ float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 3.0); g
 const PARTICLE_VERT = `
 uniform float uTime, uForm, uStream, uSize, uSwirl, uPix;
 uniform vec3 uDest, uCtrl; uniform vec2 uDestSize;
+uniform sampler2D uNameMask;
+uniform vec4 uNameA, uNameB;
+uniform float uNameScale;
 attribute vec3 aStart; attribute vec4 aRand; attribute float aSide;
 varying float vA; varying float vM; varying float vS;
 vec3 rotZ(vec3 p, float a){ float c = cos(a), s = sin(a); return vec3(c*p.x - s*p.y, s*p.x + c*p.y, p.z); }
@@ -295,7 +323,11 @@ void main(){
   float f = clamp(uForm*1.6 - aRand.x*.6, 0.0, 1.0);
   float fe = eo(f);
   vec3 s = rotZ(aStart, (1.0 - fe) * uSwirl * (.6 + aRand.y));
-  vec3 p = mix(s, position, fe);
+  vec4 nameTarget = mix(uNameA, uNameB, aSide);
+  vec2 glyph = texture2D(uNameMask, vec2(fract(aRand.x + aRand.z), nameTarget.w)).rg;
+  glyph += vec2(aRand.y, -aRand.w) * vec2(2.0 / 640.0, 2.0 / 342.0);
+  vec3 destName = nameTarget.xyz + vec3(glyph * uDestSize, .05) * uNameScale;
+  vec3 p = mix(s, destName, fe);
   p += vec3(sin(uTime*2.0 + aRand.y*50.0), cos(uTime*1.7 + aRand.z*50.0), 0.0) * .01 * fe;
   p += vec3(sin(uTime*3.0 + aRand.w*30.0), cos(uTime*2.6 + aRand.x*30.0), sin(uTime*2.0 + aRand.y*20.0)) * .3 * (1.0 - fe) * f;
   float st = clamp(uStream*1.6 - aRand.z*.6, 0.0, 1.0);
@@ -343,18 +375,15 @@ async function initWorld() {
   V.RoundedBox = rb.RoundedBoxGeometry;
 
   // 日本語フォントは文字ごとに分割配信されるので、使う文字を指定して読み込む
-  const text = studentsOriginal.map(s => s.name + s.kana).join("") + "0123456789人目ラスト！教卓?？";
+  const text = studentsOriginal.map(s => s.name + s.kana).join("") + "0123456789人目ラスト！教卓?？Z";
   try {
-    await Promise.race([
-      Promise.all(["800", "900"].map(w => document.fonts.load(`${w} 40px "M PLUS Rounded 1c"`, text))),
-      sleep(4000),
-    ]);
+    await Promise.all(["800", "900"].map(w => document.fonts.load(`${w} 40px "M PLUS Rounded 1c"`, text)));
   } catch {}
 
   const canvas = document.getElementById("scene");
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: "high-performance" });
   V.renderer = renderer;
-  V.pixelRatio = Math.min(devicePixelRatio || 1, QUALITY === "low" ? 1 : 1.5);
+  V.pixelRatio = Math.min(devicePixelRatio || 1, QUALITY === "low" ? 1 : 2);
   renderer.setPixelRatio(V.pixelRatio);
   renderer.setSize(innerWidth, innerHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -379,12 +408,30 @@ async function initWorld() {
   scene.add(warm);
 
   // ポストエフェクト (ブルーム)
-  const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: QUALITY === "low" ? 0 : 4 });
+  const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
   const composer = new ec.EffectComposer(renderer, rt);
+  composer.setPixelRatio(V.pixelRatio);
   composer.addPass(new rp.RenderPass(scene, camera));
-  V.bloom = new bp.UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), .7, .5, .92);
+  // UnrealBloomPass 自身も最初の段を半分にするので、明部抽出は実寸の 1/4。
+  class QuarterBloomPass extends bp.UnrealBloomPass {
+    setSize(w, h) { super.setSize(Math.max(2, w / 2), Math.max(2, h / 2)); }
+  }
+  V.bloom = new QuarterBloomPass(new THREE.Vector2(1, 1), .7, .5, .92);
+  for (const target of [V.bloom.renderTargetBright, ...V.bloom.renderTargetsHorizontal, ...V.bloom.renderTargetsVertical]) {
+    target.depthBuffer = false;
+  }
   composer.addPass(V.bloom);
-  composer.addPass(new op.OutputPass());
+  // r180 のブルームを出力パスで加算し、HDR の全画面バッファへの書き戻しを省く。
+  const output = new op.OutputPass();
+  output.needsSwap = false;
+  V.bloom.blendMaterial.visible = false;
+  output.uniforms.tBloom = { value: V.bloom.renderTargetsHorizontal[0].texture };
+  output.material.fragmentShader = output.material.fragmentShader
+    .replace("uniform sampler2D tDiffuse;", "uniform sampler2D tDiffuse;\nuniform sampler2D tBloom;")
+    .replace("gl_FragColor = texture2D( tDiffuse, vUv );", `
+      vec4 bloom = texture2D(tBloom, vUv);
+      gl_FragColor = texture2D(tDiffuse, vUv) + bloom * bloom.a;`);
+  composer.addPass(output);
   V.composer = composer;
 
   V.tex = {
@@ -395,30 +442,110 @@ async function initWorld() {
   const backC = makeCanvas(640, 342);
   drawBack(backC.getContext("2d"), 640, 342);
   V.tex.back = canvasTex(backC);
-  V.plateTex = {};
-  for (const s of studentsOriginal) {
-    const c = makeCanvas(640, 342);
-    drawFace(c.getContext("2d"), 640, 342, s, { badge: true });
-    V.plateTex[s.no] = canvasTex(c);
-  }
+  prepareNameAssets(renderer);
 
   V.uniforms = { uTime: { value: 0 }, uDim: { value: 1 }, uTint: { value: new THREE.Color(1, 1, 1) } };
+  V.wall = new THREE.WebGLRenderTarget(1024, 512, { type: THREE.HalfFloatType, depthBuffer: false });
+  bakeWall(renderer);
+  canvas.addEventListener("webglcontextrestored", () => bakeWall(renderer));
   buildRoom();
   buildSpots();
   buildDesks();
   buildStage();
 
   V.camOffset = v3();
+  V.sway = v3();
+  V.shakeOffset = v3();
   V.shakeAmt = 0;
-  V.clock = new THREE.Clock();
   layoutWorld();
   addEventListener("resize", layoutWorld);
   setupPicking(canvas);
   syncAllSeats();
 
-  V.frames = 0; V.slowFrames = 0;
-  renderer.setAnimationLoop(frame);
   worldReady = true;
+}
+
+function prepareNameAssets(renderer) {
+  V.plateTex = {};
+  V.cardFaces = {};
+  V.cardLabels = new Map();
+  const face = (s, w, h, options) => {
+    const canvas = makeCanvas(w, h);
+    drawFace(canvas.getContext("2d"), w, h, s, options);
+    const tex = canvasTex(canvas);
+    renderer.initTexture(tex);
+    return tex;
+  };
+  for (const s of studentsOriginal) {
+    V.plateTex[s.no] = face(s, 640, 342, { badge: true });
+    V.cardFaces[s.no] = [
+      face(s, 640, 342),
+      face(s, 1024, 548, { label: true, separateLabel: true }),
+    ];
+  }
+  const labels = studentsOriginal.map((_, i) => `${i + 1}人目`).concat("ラスト！");
+  for (const label of labels) {
+    const c = makeCanvas(320, 112), ctx = c.getContext("2d");
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = CSS.gold;
+    ctx.font = `900 ${548 * .12}px ${FONT}`;
+    ctx.fillText(label, c.width / 2, c.height / 2);
+    const tex = canvasTex(c);
+    renderer.initTexture(tex);
+    V.cardLabels.set(label, tex);
+  }
+  V.nameMask = buildNameMask(renderer);
+}
+
+function buildNameMask(renderer) {
+  const w = 640, h = 342, width = 2048, height = studentsOriginal.length * 2;
+  const c = makeCanvas(w, h), ctx = c.getContext("2d", { willReadFrequently: true });
+  const points = [], rows = {};
+  const packed = new Float32Array(width * height * 2);
+  studentsOriginal.forEach((s, i) => {
+    rows[s.no] = i * 2;
+    for (const mode of [0, 1]) {
+      drawFace(ctx, w, h, s, { textOnly: true, label: mode });
+      const data = ctx.getImageData(0, 0, w, h).data;
+      points.length = 0;
+      for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) {
+        if (data[(y * w + x) * 4 + 3] > 110) points.push(x / w - .5, .5 - y / h);
+      }
+      const count = points.length / 2;
+      if (!count) continue;
+      for (let x = 0; x < width; x++) {
+        const point = Math.floor(x * count / width) * 2;
+        const to = ((i * 2 + mode) * width + x) * 2;
+        packed[to] = points[point];
+        packed[to + 1] = points[point + 1];
+      }
+    }
+  });
+  const texture = new THREE.DataTexture(packed, width, height, THREE.RGFormat, THREE.FloatType);
+  texture.needsUpdate = true;
+  renderer.initTexture(texture);
+  return { texture, rows, height };
+}
+
+function bakeWall(renderer) {
+  const geometry = new THREE.PlaneGeometry(2, 2);
+  const material = new THREE.ShaderMaterial({
+    vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }",
+    fragmentShader: WALL_BAKE_FRAG,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const scene = new THREE.Scene(), camera = new THREE.Camera();
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.frustumCulled = false;
+  scene.add(mesh);
+  const previous = renderer.getRenderTarget();
+  renderer.setRenderTarget(V.wall);
+  renderer.render(scene, camera);
+  renderer.setRenderTarget(previous);
+  geometry.dispose();
+  material.dispose();
 }
 
 /* ---------------- 教室 ---------------- */
@@ -442,9 +569,12 @@ function buildRoom() {
 
   const wall = new THREE.Mesh(
     new THREE.PlaneGeometry(90, 30),
-    new THREE.ShaderMaterial({ vertexShader: WORLD_VERT, fragmentShader: WALL_FRAG, uniforms: V.uniforms }));
+    new THREE.ShaderMaterial({ vertexShader: WORLD_VERT, fragmentShader: WALL_FRAG, uniforms: {
+      ...V.uniforms, uWall: { value: V.wall.texture }, uWallFrame: { value: 0 },
+    } }));
   wall.position.set(0, 15, PODIUM_Z - 2.6);
   V.scene.add(wall);
+  V.wallFrame = wall.material.uniforms.uWallFrame;
 
   // 教卓: 木の台 + 金の文字
   const podium = new THREE.Group();
@@ -481,10 +611,10 @@ function beamMesh(color, opacity) {
 }
 
 function aimBeam(mesh, from, to, radius) {
-  const dir = to.clone().sub(from);
+  const dir = (V.beamDirection ||= v3()).subVectors(to, from);
   const len = dir.length();
   mesh.position.copy(from);
-  mesh.quaternion.setFromUnitVectors(v3(0, -1, 0), dir.normalize());
+  mesh.quaternion.setFromUnitVectors(V.beamDown ||= v3(0, -1, 0), dir.normalize());
   mesh.scale.set(radius, len, radius);
 }
 
@@ -514,22 +644,25 @@ function buildDesks() {
   const plateGeo = new THREE.PlaneGeometry(FACE_W, FACE_H);
   const pedMat = new THREE.MeshStandardMaterial({ color: 0x10152e, metalness: .55, roughness: .35 });
   const topMat = new THREE.MeshStandardMaterial({ color: 0x1f2858, metalness: .35, roughness: .22 });
+  const n = realSeatPositions.length;
+  const ped = new THREE.InstancedMesh(pedGeo, pedMat, n);
+  const top = new THREE.InstancedMesh(topGeo, topMat, n);
+  const strip = new THREE.InstancedMesh(stripGeo, new THREE.MeshBasicMaterial(), n);
+  const glowGeo = new THREE.PlaneGeometry(2.6, 2.0);
+  glowGeo.rotateX(-Math.PI / 2);
+  const glow = new THREE.InstancedMesh(glowGeo, new THREE.MeshBasicMaterial({
+    map: V.tex.glow, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  }), n);
+  V.scene.add(ped, top, strip, glow);
+  V.deskParts = { ped, top, strip, glow, color: new THREE.Color() };
+  const matrix = new THREE.Matrix4();
 
-  for (const key of realSeatPositions) {
+  realSeatPositions.forEach((key, index) => {
     const { x, z } = seatXZ(key);
-    const desk = new THREE.Group();
-    desk.position.set(x, 0, z);
-    const ped = new THREE.Mesh(pedGeo, pedMat); ped.position.y = .2;
-    const top = new THREE.Mesh(topGeo, topMat); top.position.y = .45;
-    const strip = new THREE.Mesh(stripGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }));
-    strip.position.y = .4;
-    const glow = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 2.0), new THREE.MeshBasicMaterial({
-      map: V.tex.glow, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, color: 0xffffff,
-    }));
-    glow.rotation.x = -Math.PI / 2;
-    glow.position.y = .015;
-    desk.add(ped, top, strip, glow);
-    V.scene.add(desk);
+    ped.setMatrixAt(index, matrix.makeTranslation(x, .2, z));
+    top.setMatrixAt(index, matrix.makeTranslation(x, .45, z));
+    strip.setMatrixAt(index, matrix.makeTranslation(x, .4, z));
+    glow.setMatrixAt(index, matrix.makeTranslation(x, .015, z));
 
     const pivot = new THREE.Group();
     pivot.position.set(x, PLATE_Y, z + .12);
@@ -549,9 +682,15 @@ function buildDesks() {
     pivot.add(flipper, frame, lock);
     V.scene.add(pivot);
 
-    for (const m of [ped, top, front, back]) m.userData.key = key;
-    V.seat[key] = { desk, pivot, flipper, front, back, frame, lock, strip, glow, phase: Math.random() * 6.28, base: v3(x, PLATE_Y, z + .12) };
-  }
+    front.userData.key = back.userData.key = key;
+    V.seat[key] = { index, pivot, flipper, front, back, frame, lock, phase: Math.random() * 6.28, base: v3(x, PLATE_Y, z + .12) };
+  });
+}
+
+function setDeskStrip(seat, color, intensity = 1) {
+  const parts = V.deskParts;
+  parts.strip.setColorAt(seat.index, parts.color.copy(color).multiplyScalar(intensity));
+  parts.strip.instanceColor.needsUpdate = true;
 }
 
 /* ---------------- 席の見た目 ---------------- */
@@ -562,10 +701,10 @@ function seatLook(key) {
   const isHidden = hidden.has(key);
   const isLocked = locked.has(key);
   o.front.material.map = V.plateTex[s.no];
-  o.front.material.needsUpdate = true;
-  const c = isHidden ? hdr(0x8fa3ff, .35) : hdr(HEX[s.gender], 2.4);
-  o.strip.material.color.copy(c);
-  o.glow.material.color.copy(isHidden ? hdr(0x6070ff, .08) : hdr(HEX[s.gender], .32));
+  const { glow, color } = V.deskParts;
+  setDeskStrip(o, color.set(isHidden ? 0x8fa3ff : HEX[s.gender]), isHidden ? .35 : 2.4);
+  glow.setColorAt(o.index, color.set(isHidden ? 0x6070ff : HEX[s.gender]).multiplyScalar(isHidden ? .08 : .32));
+  glow.instanceColor.needsUpdate = true;
   o.frame.visible = isLocked;
   o.lock.visible = isLocked;
 }
@@ -609,10 +748,7 @@ function buildStage() {
   const rim = new THREE.Mesh(new V.RoundedBox(FACE_W + .14, FACE_H + .14, .03, 4, .09),
     new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true }));
   rim.position.z = 0;   // 本体の厚みの内側に置く (裏から見たとき枠が全面を覆わないように)
-  const heroC = makeCanvas(1024, 548);
-  V.heroCanvas = heroC;
-  V.tex.hero = canvasTex(heroC);
-  const front = new THREE.Mesh(new THREE.PlaneGeometry(FACE_W, FACE_H), new THREE.MeshBasicMaterial({ map: V.tex.hero, transparent: true, color: new THREE.Color(.84, .84, .84) }));
+  const front = makeCardFront(new THREE.PlaneGeometry(FACE_W, FACE_H));
   front.position.z = .034;
   const back = new THREE.Mesh(new THREE.PlaneGeometry(FACE_W, FACE_H), new THREE.MeshBasicMaterial({ map: V.tex.back, transparent: true }));
   back.rotation.y = Math.PI;
@@ -633,11 +769,31 @@ function buildStage() {
 function setCardOpacity(a) {
   const c = V.card;
   for (const m of [c.body, c.rim, c.front, c.back]) m.material.opacity = a;
+  c.front.userData.label.material.opacity = a;
 }
 
-function drawHero(s, o = {}) {
-  drawFace(V.heroCanvas.getContext("2d"), 1024, 548, s, o);
-  V.tex.hero.needsUpdate = true;
+function makeCardFront(geometry) {
+  const front = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
+    map: V.cardFaces[studentsOriginal[0].no][0], transparent: true, color: new THREE.Color(.84, .84, .84),
+  }));
+  const label = new THREE.Mesh(V.labelGeometry ||= new THREE.PlaneGeometry(FACE_W * 320 / 1024, FACE_H * 112 / 548),
+    new THREE.MeshBasicMaterial({ map: V.cardLabels.get("1人目"), transparent: true, depthWrite: false, color: front.material.color }));
+  label.position.set(0, FACE_H * (.5 - .17), .001);
+  label.visible = false;
+  front.add(label);
+  front.userData.label = label;
+  return front;
+}
+
+function setCardFront(front, student, label) {
+  front.material.map = V.cardFaces[student.no][label ? 1 : 0];
+  const plate = front.userData.label;
+  plate.visible = V.cardLabels.has(label);
+  if (plate.visible) plate.material.map = V.cardLabels.get(label);
+}
+
+function drawHero(s, { label } = {}) {
+  setCardFront(V.card.front, s, label);
 }
 
 function setHero(s, label) {
@@ -658,7 +814,7 @@ function buildParticles() {
   const g = new THREE.BufferGeometry();
   const rnd = new Float32Array(N * 4);
   for (let i = 0; i < rnd.length; i++) rnd[i] = Math.random();
-  g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(N * 3), 3));
+  g.setDrawRange(0, N);
   g.setAttribute("aStart", new THREE.BufferAttribute(new Float32Array(N * 3), 3));
   g.setAttribute("aRand", new THREE.BufferAttribute(rnd, 4));
   g.setAttribute("aSide", new THREE.BufferAttribute(new Float32Array(N), 1));
@@ -669,6 +825,8 @@ function buildParticles() {
       uTime: V.uniforms.uTime, uForm: { value: 0 }, uStream: { value: 0 }, uSize: { value: .05 },
       uSwirl: { value: 5 }, uPix: { value: 1 }, uDest: { value: v3() }, uCtrl: { value: v3() },
       uDestSize: { value: new THREE.Vector2(FACE_W, FACE_H) }, uColA: { value: new THREE.Color() }, uColA2: { value: new THREE.Color() }, uColB: { value: new THREE.Color() }, uFade: { value: 0 },
+      uNameMask: { value: V.nameMask.texture }, uNameA: { value: new THREE.Vector4() },
+      uNameB: { value: new THREE.Vector4() }, uNameScale: { value: 1 },
     },
     transparent: true,
     depthWrite: false,
@@ -683,23 +841,11 @@ function buildParticles() {
 }
 
 // 名前の文字の形をした点の集まり (カードの面と同じ位置)
-function nameTargets(s, label, k, center) {
-  const Wc = 640, Hc = 342;
-  const c = makeCanvas(Wc, Hc), ctx = c.getContext("2d", { willReadFrequently: true });
-  drawFace(ctx, Wc, Hc, s, { textOnly: true, label });
-  const data = ctx.getImageData(0, 0, Wc, Hc).data;
-  const px = [];
-  for (let y = 0; y < Hc; y += 2) for (let x = 0; x < Wc; x += 2) if (data[(y * Wc + x) * 4 + 3] > 110) px.push(x, y);
-  const P = V.particles, pos = P.geo.attributes.position.array;
-  const n = px.length / 2;
-  for (let i = 0; i < P.N; i++) {
-    const j = Math.floor(Math.random() * n) * 2;
-    const x = px[j] + Math.random() * 2, y = px[j + 1] + Math.random() * 2;
-    pos[i * 3] = center.x + (x / Wc - .5) * FACE_W * k;
-    pos[i * 3 + 1] = center.y + (.5 - y / Hc) * FACE_H * k;
-    pos[i * 3 + 2] = center.z + .05 * k;
-  }
-  P.geo.attributes.position.needsUpdate = true;
+function nameTargets(s, label, k, center, second = false) {
+  const { rows, height } = V.nameMask, u = V.particles.u;
+  const target = second ? u.uNameB.value : u.uNameA.value;
+  target.set(center.x, center.y, center.z, (rows[s.no] + (label ? 1 : 0) + .5) / height);
+  u.uNameScale.value = k;
 }
 
 function particleStart(mode, at) {
@@ -746,6 +892,7 @@ function buildSparks() {
   const pts = new THREE.Points(g, mat);
   pts.frustumCulled = false;
   pts.renderOrder = 6;
+  pts.visible = false;
   V.stage.add(pts);
   V.sparks = { pts, N, geo: g, vel: new Float32Array(N * 3), life: new Float32Array(N), max: new Float32Array(N), size: new Float32Array(N), grav: new Float32Array(N), next: 0 };
 }
@@ -754,6 +901,7 @@ function buildSparks() {
 function burst(at, color, n = 120, speed = 3, o = {}) {
   V.sparks.active = true;
   const S = V.sparks, pos = S.geo.attributes.position.array, col = S.geo.attributes.aColor.array;
+  S.pts.visible = true;
   for (let k = 0; k < n; k++) {
     const i = S.next; S.next = (S.next + 1) % S.N;
     const a = Math.random() * 6.283, b = Math.acos(2 * Math.random() - 1);
@@ -789,7 +937,7 @@ function updateSparks(dt) {
   S.geo.attributes.position.needsUpdate = true;
   S.geo.attributes.aAlpha.needsUpdate = true;
   S.geo.attributes.aSize.needsUpdate = true;
-  if (!alive) S.active = false;
+  if (!alive) S.pts.visible = S.active = false;
 }
 
 /* ---------------- 配置 (画面サイズに合わせる) ---------------- */
@@ -875,10 +1023,10 @@ function toScreen(local) {
 /* ---------------- タップで固定 ---------------- */
 function setupPicking(canvas) {
   const ray = new THREE.Raycaster();
-  const targets = [];
+  const targets = [V.deskParts.ped, V.deskParts.top];
   for (const key in V.seat) {
     const o = V.seat[key];
-    targets.push(o.front, o.back, o.desk.children[0], o.desk.children[1]);
+    targets.push(o.front, o.back);
   }
   let down = null;
   canvas.addEventListener("pointerdown", e => { down = { x: e.clientX, y: e.clientY }; });
@@ -888,7 +1036,7 @@ function setupPicking(canvas) {
     const ndc = new THREE.Vector2(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
     ray.setFromCamera(ndc, V.camera);
     const hit = ray.intersectObjects(targets, false)[0];
-    if (hit) onSeatTap(hit.object.userData.key);
+    if (hit) onSeatTap(hit.instanceId === undefined ? hit.object.userData.key : realSeatPositions[hit.instanceId]);
   });
 }
 
@@ -898,38 +1046,33 @@ function tapPulse(key) {
 }
 
 /* ---------------- 毎フレーム ---------------- */
-function frame() {
-  if (V.renderHold) { V.clock.getDelta(); return; }   // 動画の再生中は3Dの描画を止める
-  const rawDt = V.clock.getDelta();
-  const dt = Math.min(rawDt, .05) * TIME_SCALE;
+function frame(now) {
+  const interval = 1000 / TARGET_FPS;
+  const next = V.nextFrameAt ?? now;
+  if (now + 2 < next) return;
+  V.nextFrameAt = now - next > interval / 2 ? now + interval : next + interval;
+  const dt = Math.min((now - (V.lastFrameAt ?? now)) / 1000, .05) * TIME_SCALE;
+  V.lastFrameAt = now;
+  for (const step of activeTweens) step(now);
+  if (V.renderHold) return;   // 動画の再生中は3Dの描画を止める
   V.time = (V.time || 0) + dt;
   const t = V.time;
   V.uniforms.uTime.value = t;
 
-  // 重いときは解像度を少しずつ下げる (2秒ごとに平均を見る。ずっと監視)
-  V.perfT = (V.perfT || 0) + Math.min(rawDt, .2);
-  V.perfN = (V.perfN || 0) + 1;
-  if (V.perfT > 2) {
-    const avg = V.perfT / V.perfN;
-    V.perfT = V.perfN = 0;
-    if (avg > .021 && V.pixelRatio > 1) {
-      V.pixelRatio = Math.max(1, +(V.pixelRatio - .25).toFixed(2));
-      V.renderer.setPixelRatio(V.pixelRatio);
-      layoutWorld();
-    }
-  }
+  // 45 秒分の壁のノイズを補間し、折り返して境界をつなぐ。
+  V.wallFrame.value = 15 - Math.abs(t / 3 % 30 - 15);
 
   // カメラ: ゆっくり揺れる + 寄り
   if (V.camRig) {
     V.camRig(dt, t);
   } else {
-    const sway = v3(Math.sin(t * .23) * .18, Math.sin(t * .31) * .1, 0).applyQuaternion(V.homeQuat);
+    const sway = V.sway.set(Math.sin(t * .23) * .18, Math.sin(t * .31) * .1, 0).applyQuaternion(V.homeQuat);
     V.camera.position.copy(V.homePos).add(V.camOffset).add(sway);
     V.camera.quaternion.copy(V.homeQuat);
   }
   if (V.shakeAmt > .002) {
     const k = V.shakeAmt;
-    V.camera.position.add(v3((Math.random() - .5) * k, (Math.random() - .5) * k, (Math.random() - .5) * k * .5));
+    V.camera.position.add(V.shakeOffset.set((Math.random() - .5) * k, (Math.random() - .5) * k, (Math.random() - .5) * k * .5));
     V.shakeAmt *= Math.pow(V.shakeKeep ? 1 : .015, dt);
   }
 
@@ -938,8 +1081,7 @@ function frame() {
   const fu = V.floor.material.uniforms;
   V.spots.forEach((s, i) => {
     const a = V.spotT * .35 + s.phase;
-    const wander = v3(Math.sin(a) * 6.5, 0, Math.cos(a * .8 + i) * 4.2 - .6);
-    s.target.copy(wander).lerp(V.spotFocusAt, V.spotFocus);
+    s.target.set(Math.sin(a) * 6.5, 0, Math.cos(a * .8 + i) * 4.2 - .6).lerp(V.spotFocusAt, V.spotFocus);
     if (V.spotLock && V.spotLock[i]) s.target.lerp(V.spotLock[i], V.spotLockAmt || 0);   // 1本ずつ別の場所に向ける
     aimBeam(s.mesh, s.from, s.target, lerp(1.7, 1.1, V.spotFocus));
     fu.uSpot.value[i].set(s.target.x, s.target.z, lerp(1.9, 1.3, V.spotFocus));
@@ -962,7 +1104,7 @@ function frame() {
 
 function addFrameHook(f) { (V.onFrame ||= new Set()).add(f); return () => V.onFrame.delete(f); }
 
-// 名札と机の光の明るさ (停電など)
+// 名札と舞台の明るさ
 function setPlateDim(k) {
   V.plateDim = k;
   for (const key in V.seat) {

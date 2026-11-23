@@ -49,16 +49,28 @@ const ease = {
   back: t => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); },
 };
 
+const activeTweens = new Set();
+
 function tween(ms, fn, e = ease.inOut) {
-  return new Promise(res => {
+  return new Promise((resolve, reject) => {
     const start = performance.now();
+    const managed = worldReady;
     fn(e(0));   // 最初の状態をすぐ反映 (1コマだけ完成形が見えるのを防ぐ)
     function step(now) {
-      const t = Math.min(1, (now - start) * TIME_SCALE / ms);
-      fn(e(t));
-      if (t < 1) requestAnimationFrame(step); else res();
+      try {
+        const t = Math.min(1, Math.max(0, now - start) * TIME_SCALE / ms);
+        fn(e(t));
+        if (t >= 1) {
+          activeTweens.delete(step);
+          resolve();
+        } else if (!managed) requestAnimationFrame(step);
+      } catch (error) {
+        activeTweens.delete(step);
+        reject(error);
+      }
     }
-    requestAnimationFrame(step);
+    if (managed) activeTweens.add(step);
+    else requestAnimationFrame(step);
   });
 }
 
@@ -172,15 +184,11 @@ async function shuffleSeats() {
     const rounds = makeRounds(order);                           // 2人ずつの組 (最後は「最前列中央 + 2人」か「最後の1人」)
     const hasFront = order.includes(FRONT_ROW.key);
     const R = rounds.length;
-    const prog = buildProgram(R);
     resetDecks();
     resetPairDeck(order.length);
     for (let r = 0; r < R; r++) {
-      for (const ev of prog[r] || []) {
-        if (ev.cut === "halfway") await cutHalfway(hidden.size);
-        else if (ev.cut === "tension") { if (!hasFront) await cutTension(hidden.size); }
-        else if (ev.cut) await CUTS[ev.cut]();
-      }
+      if (R >= 6 && r === Math.floor(R / 2)) await cutHalfway(hidden.size);
+      if (!hasFront && R >= 4 && r === R - 2) await cutTension(hidden.size);
       const list = rounds[r].map(key => ({ s: seats[key], key }));
       if (list.some(x => x.key === FRONT_ROW.key)) {
         // 残り3人: 「ラスト3人…」→ 3人を見せる → 動画で最前列の中央を明かす → 残りの2人
@@ -229,9 +237,10 @@ addEventListener("DOMContentLoaded", () => {
   // 起動時に重い準備を全部済ませる (本番中に止まらないように)。ローディングは長くなってよい
   initWorld()
     .then(async () => {
-      try { warmUpShaders(); } catch (e) { console.warn(e); }
+      try { await warmUpShaders(); } catch (e) { console.warn(e); }
       try { frontRowPreload(); } catch {}
       await Promise.race([soundInit(), sleep(10000)]);   // 効果音の読み込みと変換
+      V.renderer.setAnimationLoop(frame);
       document.body.classList.add("ready");
     })
     .catch(e => {

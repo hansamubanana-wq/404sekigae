@@ -10,13 +10,13 @@
 const BUBBLE_SFX = {
   "…じゃなくて": "wrong", "…ではなく！": "wrong", "いや、ちがう！": "wrong", "ここ…？": "question",
   "あれ？": "question", "！？": "question", "…なんで猫？": "question", "…なんだったんだ": "question",
-  "ニャッ": "pop", "ニャー": "pop", "ニャニャ": "pop", "ドロン": "pop",
+  "ニャッ": "pop", "ニャニャ": "pop", "ドロン": "pop",
   "ビュオォォ！": "windbig", "…ヒュ～": "windbig", "行きすぎ！": "whoosh", "やばっ": "whoosh",
   "分身の術！": "phase", "シュン！": "phase", "どれが本物？": "suspense", "本物はこっち！": "chime",
   "そろ〜り": "step", "ジリリリリ！": "bell", "パカッ！": "boxopen", "ドゥルルルル…": "suspense",
   "ジャーン！": "gong", "ピキッ": "crack", "ピキピキッ": "crack", "ザザッ…": "glitch",
   "…チャンネル調整中": "zap", "どこだ…？": "suspense", "発射！": "thruster", "…なにか来る！": "suspense",
-  "ボヨン": "boing", "ぽよん": "boing", "ボイン": "boing", "停電！？": "down", "…あ、ついた": "switch",
+  "ボヨン": "boing", "ぽよん": "boing", "ボイン": "boing",
 };
 
 function bubble(text, local, ms = 1100) {
@@ -426,7 +426,7 @@ async function flyCat(s, key) {
 
   const fromLeft = Math.random() < .5;
   const CS = 1.3;
-  const cat = stageActor(buildCat(pick([0xf2a541, 0x9aa3ad, 0x3a3a3a, 0xf6efe4])));
+  const cat = stageActor(buildCat, pick([0xf2a541, 0x9aa3ad, 0x3a3a3a, 0xf6efe4]));
   let flip = fromLeft ? -1 : 1;   // -1 = 右へ走る
   cat.position.set(fromLeft ? -W / 2 - 1.5 : W / 2 + 1.5, mid.y - .75, .2);
   let carry = false;
@@ -481,8 +481,7 @@ async function flyCat(s, key) {
 async function flyUfo(s, key) {
   const c = card(), P = plateLocal(key);
   const W = V.visW, H = V.visH;
-  const ufo = buildUfo();
-  V.stage.add(ufo.g);
+  const ufo = stageUfo();
 
   const p0 = c.position.clone(), s0 = c.scale.x;
   const spot = v3(rand(-W * .2, W * .2), -H * .15, 0);
@@ -530,7 +529,12 @@ async function flyUfo(s, key) {
   await tween(250, t => { ufo.beam.material.uniforms.uOpacity.value = .9 * (1 - t); }, ease.linear);
   const u1 = ufo.g.position.clone();
   tween(900, t => { ufo.g.position.copy(u1).add(v3(t * 2, t * (H + 4), 0)); ufo.g.rotation.z = -t * .5; }, ease.in)
-    .then(() => { ufo.unhook(); V.stage.remove(ufo.g); if (hum) hum.stop(.5); });
+    .then(() => { ufo.remove(); if (hum) hum.stop(.5); });
+}
+
+function stageUfo() {
+  const g = stageActor(buildUfo);
+  return { g, beam: g.userData.beam, remove: g.userData.remove };
 }
 
 function buildUfo() {
@@ -542,10 +546,10 @@ function buildUfo() {
   dome.position.y = .12;
   g.add(body, dome);
   const lights = [];
-  const cols3 = [0xff4fb0, 0x38bdf8, 0xfbbf24];
+  const cols3 = [0xff4fb0, 0x38bdf8, 0xfbbf24].map(color => hdr(color, 3));
   for (let i = 0; i < 10; i++) {
     const a = i / 10 * Math.PI * 2;
-    const m = new THREE.Mesh(new THREE.SphereGeometry(.055, 12, 8), new THREE.MeshBasicMaterial({ color: hdr(cols3[i % 3], 3) }));
+    const m = new THREE.Mesh(new THREE.SphereGeometry(.055, 12, 8), new THREE.MeshBasicMaterial({ color: cols3[i % 3] }));
     m.position.set(Math.cos(a) * .92, -.04, Math.sin(a) * .92);
     g.add(m);
     lights.push(m);
@@ -554,12 +558,19 @@ function buildUfo() {
   beam.position.y = -.15;
   beam.visible = false;
   g.add(beam);
-  const unhook = addFrameHook((dt, t) => {
+  g.userData.beam = beam;
+  g.userData.reset = () => {
+    beam.visible = false;
+    beam.scale.setScalar(1);
+    beam.material.uniforms.uOpacity.value = 0;
+  };
+  g.userData.update = (t, dt) => {
     g.rotation.y += dt * 1.5;
-    lights.forEach((m, i) => m.material.color.copy(hdr(cols3[(i + Math.floor(t * 8)) % 3], 3)));
+    const phase = Math.floor(t * 8);
+    lights.forEach((m, i) => m.material.color.copy(cols3[(i + phase) % 3]));
     g.position.y += Math.sin(t * 3) * .004;
-  });
-  return { g, beam, unhook };
+  };
+  return g;
 }
 
 // 強風: 画面の外まで吹き飛ばされ、木の葉みたいにひらひら戻ってくる
@@ -568,8 +579,7 @@ async function flyWind(s, key) {
   const W = V.visW, H = V.visH;
   const toRight = Math.random() < .5;
   const wy = c.position.y;
-  const gust = stageActor(buildGust(W, H));
-  gust.scale.x = toRight ? 1 : -1;
+  const gust = stageGust(toRight ? 1 : -1);
   bubble("ビュオォォ！", v3(toRight ? -W * .3 : W * .3, wy + 1.2, .5), 1100);
   const gusting = tween(2000, t => gust.userData.progress(t), ease.linear);
   await sleep(450);
@@ -690,11 +700,11 @@ async function flySleep(s, key) {
   const mid = p0.clone().lerp(P, .3);
   await tween(1000, t => { c.position.lerpVectors(p0, mid, t); c.scale.setScalar(lerp(s0, s0 * .7, t)); }, ease.out);
   await tween(900, t => { c.rotation.z = -.45 * t; c.position.y = mid.y - .3 * t; }, ease.inOut);
-  const z = stageActor(buildZs());
+  const z = stageActor(buildZs);
   const unZ = addFrameHook(() => z.position.copy(c.position).add(v3(FACE_W * c.scale.x * .45, FACE_H * c.scale.x * .4, .3)));
   await sleep(2100);
   unZ(); z.userData.remove();
-  const clock = stageActor(buildClock());
+  const clock = stageActor(buildClock);
   clock.scale.setScalar(.95);
   clock.position.copy(c.position).add(v3(-2.1, .5, .6));
   clock.rotation.y = .35;
@@ -737,8 +747,8 @@ async function land(s, key, style = "pop") {
   floorFocus(key, true).then(() => floorFocus(key, false));
   sfx("land", { pan: P.x / V.visW });
   sfx("chime", { vol: .8, delay: .05 });
-  o.strip.material.color.copy(col.clone().multiplyScalar(6));
-  tween(900, t => o.strip.material.color.copy(col.clone().multiplyScalar(lerp(6, 2.4, t))), ease.out);
+  setDeskStrip(o, col, 6);
+  tween(900, t => setDeskStrip(o, col, lerp(6, 2.4, t)), ease.out);
   updateStatus();
 }
 
@@ -853,7 +863,7 @@ async function showFinale() {
     const o = V.seat[key];
     tween(500, t => o.pivot.scale.setScalar(1 + Math.sin(t * Math.PI) * .2), ease.out);
     const col = hdr(HEX[seats[key].gender], 1);
-    tween(700, t => o.strip.material.color.copy(col.clone().multiplyScalar(lerp(7, 2.4, t))), ease.out);
+    tween(700, t => setDeskStrip(o, col, lerp(7, 2.4, t)), ease.out);
   }));
   V.spotSpeed = 4;
   bgm("finale");

@@ -33,31 +33,43 @@ function camHome(ms = 700) {
 }
 
 // 名前カード (表に名前、裏に「?」)。setFace で別の名前に描き直せる
-function pairCard(s, label, k) {
+const pairCardPool = [];
+
+function buildPairCard() {
   const src = V.card;
   const g = new THREE.Group();
-  const cv = makeCanvas(1024, 548), ctx = cv.getContext("2d");
-  const tex = canvasTex(cv);
   const body = new THREE.Mesh(src.body.geometry, src.body.material.clone());
   const rim = new THREE.Mesh(src.rim.geometry, new THREE.MeshBasicMaterial({ transparent: true }));
-  const front = new THREE.Mesh(src.front.geometry, new THREE.MeshBasicMaterial({ map: tex, transparent: true, color: new THREE.Color(.84, .84, .84) }));
+  const front = makeCardFront(src.front.geometry);
   front.position.z = .034;
   const back = new THREE.Mesh(src.back.geometry, new THREE.MeshBasicMaterial({ map: V.tex.back, transparent: true }));
   back.rotation.y = Math.PI;
   back.position.z = -.034;
   g.add(body, rim, front, back);
-  g.userData.setFace = (st, o = {}) => {
-    drawFace(ctx, 1024, 548, st, { label, ...o });
-    tex.needsUpdate = true;
-    rim.material.color.copy(hdr(HEX[st.gender], 1.7));
+  g.userData.setFace = st => {
+    setCardFront(front, st, g.userData.label);
+    rim.material.color.setHex(HEX[st.gender]).multiplyScalar(1.7);
   };
+  return g;
+}
+
+function pairCard(s, label, k) {
+  const g = pairCardPool.pop() || buildPairCard();
+  g.userData.label = label;
   g.userData.setFace(s);
-  g.userData.dispose = () => { tex.dispose(); [body, rim, front, back].forEach(m => m.material.dispose()); };
+  g.position.set(0, 0, 0);
+  g.rotation.set(0, 0, 0);
   g.scale.setScalar(k);
+  g.visible = true;
+  setGroupOpacity(g, 1);
   V.stage.add(g);
   return g;
 }
-function dropCard(g) { if (g.parent) { g.parent.remove(g); g.userData.dispose(); } }
+function dropCard(g) {
+  if (!g.parent) return;
+  g.removeFromParent();
+  pairCardPool.push(g);
+}
 // カードを消して、席に名前を入れる
 async function landCard(g, s, key, style = "pop") {
   dropCard(g);
@@ -72,24 +84,6 @@ function pairLayout(n) {
   if (n < 2) return { k: V.heroK, xs: [0] };
   const k = Math.min(V.heroK * .64, V.visW * .37 / FACE_W);
   return { k, xs: [-FACE_W * k * .6, FACE_W * k * .6] };
-}
-
-// 名前の文字の形の点を、粒子の i0〜i1 番に割り当てる
-function nameTargetsRange(s, label, k, center, i0, i1) {
-  const Wc = 640, Hc = 342;
-  const c = makeCanvas(Wc, Hc), ctx = c.getContext("2d", { willReadFrequently: true });
-  drawFace(ctx, Wc, Hc, s, { textOnly: true, label });
-  const data = ctx.getImageData(0, 0, Wc, Hc).data;
-  const px = [];
-  for (let y = 0; y < Hc; y += 2) for (let x = 0; x < Wc; x += 2) if (data[(y * Wc + x) * 4 + 3] > 110) px.push(x, y);
-  const pos = V.particles.geo.attributes.position.array, n = px.length / 2;
-  for (let i = i0; i < i1; i++) {
-    const j = Math.floor(Math.random() * n) * 2;
-    pos[i * 3] = center.x + ((px[j] + Math.random() * 2) / Wc - .5) * FACE_W * k;
-    pos[i * 3 + 1] = center.y + (.5 - (px[j + 1] + Math.random() * 2) / Hc) * FACE_H * k;
-    pos[i * 3 + 2] = center.z + .05 * k;
-  }
-  V.particles.geo.attributes.position.needsUpdate = true;
 }
 
 function popIn(g, k, ms = 450) {
@@ -126,7 +120,7 @@ const INTRO2 = {
     const side = P.geo.attributes.aSide.array;
     list.forEach((it, i) => {
       const i0 = Math.floor(N * i / list.length), i1 = Math.floor(N * (i + 1) / list.length);
-      nameTargetsRange(it.s, cards[i].userData.label, k, cards[i].position, i0, i1);
+      nameTargets(it.s, cards[i].userData.label, k, cards[i].position, i === 1);
       side.fill(i, i0, i1);
     });
     P.geo.attributes.aSide.needsUpdate = true;
@@ -398,7 +392,7 @@ const TRAVEL2 = {
     dolly(-1.2, null, 700);
     await Promise.all(cards.map((g, i) => sleep(i * 250).then(async () => {
       const { s, key } = list[i];
-      const rk = stageActor(buildRocket());
+      const rk = stageActor(buildRocket);
       rk.scale.setScalar(.9);
       const P = plateLocal(key), p0 = g.position.clone(), s0 = g.scale.x;
       const sx = p0.x === 0 ? (P.x > 0 ? 1 : -1) : Math.sign(p0.x);
@@ -431,8 +425,7 @@ const TRAVEL2 = {
   // UFO: 2枚まとめて吸い上げ、席ごとにビームで降ろす
   async ufo(list, cards) {
     const W = V.visW, H = V.visH;
-    const ufo = buildUfo();
-    V.stage.add(ufo.g);
+    const ufo = stageUfo();
     const hum = sfx("ufo", { loop: true, vol: .55 });
     const top = v3(0, H * .38, 0);
     ufo.g.position.set(0, H / 2 + 2, 0);
@@ -462,7 +455,7 @@ const TRAVEL2 = {
       await landCard(g, s, key);
     }
     const u1 = ufo.g.position.clone();
-    tween(800, t => ufo.g.position.copy(u1).add(v3(t * 3, t * (H + 4), 0)), ease.in).then(() => { ufo.unhook(); V.stage.remove(ufo.g); if (hum) hum.stop(.5); });
+    tween(800, t => ufo.g.position.set(u1.x + t * 3, u1.y + t * (H + 4), u1.z), ease.in).then(() => { ufo.remove(); if (hum) hum.stop(.5); });
     await dolly(0, null, 500);
   },
 
@@ -475,7 +468,7 @@ const TRAVEL2 = {
     await Promise.all(cards.map((g, i) => sleep(i * 200).then(async () => {
       const { s, key } = list[i];
       const from = cards.length > 1 ? (i ? 1 : -1) : -1;
-      const cat = stageActor(buildCat(pick(furs)));
+      const cat = stageActor(buildCat, pick(furs));
       const dirSet = d => cat.scale.set(CS * d, CS, CS);   // d = +1: 右向き
       const low = v3(g.position.x, -H * .3, 0);
       const s0 = g.scale.x, small = V.heroK * .4, g0 = g.position.clone();
@@ -600,8 +593,7 @@ const TRAVEL2 = {
   // 強風: 吹き飛ばされて、木の葉みたいにひらひら席へ舞い降りる
   async wind(list, cards) {
     const W = V.visW, H = V.visH, toRight = Math.random() < .5;
-    const gust = stageActor(buildGust(W, H));
-    gust.scale.x = toRight ? 1 : -1;
+    const gust = stageGust(toRight ? 1 : -1);
     bubble("ビュオォォ！", v3(toRight ? -W * .3 : W * .3, H * .3, .5), 1000);
     const gusting = tween(2000, t => gust.userData.progress(t), ease.linear);
     await sleep(400);
@@ -705,7 +697,7 @@ async function announcePair(list, force = {}) {
   lastI2 = intro; lastT2 = travel;
   const { k, xs } = pairLayout(list.length);
   const labels = list.map((_, i) => pairCount + i + 1 === pairTotal ? "ラスト！" : `${pairCount + i + 1}人目`);
-  const cards = list.map(({ s }, i) => { const g = pairCard(s, labels[i], k); g.userData.label = labels[i]; g.position.set(xs[i], 0, 0); g.visible = false; return g; });
+  const cards = list.map(({ s }, i) => { const g = pairCard(s, labels[i], k); g.position.set(xs[i], 0, 0); g.visible = false; return g; });
   try {
     veil(true, 400);
     await INTRO2[intro](list, cards, k);
@@ -742,13 +734,17 @@ function makeRounds(order) {
 /* ---------------- 起動時の準備 ----------------
    演出で初めて使う物が出た瞬間に、描画プログラムの準備で一瞬止まる (カクつく) のを防ぐため、
    起動時に一度ずつ作って準備させ、見えない状態で残しておく */
-function warmUpShaders() {
+async function warmUpShaders() {
   const g = new THREE.Group();
   V.stage.add(g);
-  const ufo = buildUfo();
+  const ufo = stageUfo();
   ufo.beam.visible = true;
-  ufo.unhook();
-  g.add(ufo.g, buildRocket(), buildCat(), buildClock(), buildGust(V.visW, V.visH), buildZs());
+  const wind = stageGust(1);
+  wind.userData.progress(.5);
+  const actors = [
+    wind, ufo.g, stageActor(buildRocket), stageActor(buildClock), stageActor(buildZs),
+    ...[0xf2a541, 0x9aa3ad, 0x3a3a3a, 0xf6efe4].map(fur => stageActor(buildCat, fur)),
+  ];
   const glass = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), new THREE.ShaderMaterial({
     vertexShader: GLASS_VERT, fragmentShader: GLASS_FRAG,
     uniforms: { uColor: { value: new THREE.Color(1, 1, 1) }, uOpacity: { value: 1 } },
@@ -765,15 +761,22 @@ function warmUpShaders() {
   const beam = beamMesh(0xffffff, .1);
   const gift = new THREE.Mesh(new THREE.TorusKnotGeometry(.1, .03, 16, 4), new THREE.MeshStandardMaterial({ color: 0xfbbf24, roughness: .3, metalness: .8, emissive: 0x553300, emissiveIntensity: .4 }));
   g.add(glass, lines, confetti, balls, curtain, ring, beam, gift);
-  const card = pairCard(studentsOriginal[0], "1人目", 1);
-  const pv = V.particles.pts.visible, cv = V.card.obj.visible;
+  const cards = [0, 1, 2].map(() => pairCard(studentsOriginal[0], "1人目", 1));
+  const pv = V.particles.pts.visible, cv = V.card.obj.visible, sv = V.sparks.pts.visible;
   V.particles.pts.visible = true;
   V.card.obj.visible = true;
-  try { V.renderer.compile(V.scene, V.camera); V.composer.render(); } catch {}
-  V.particles.pts.visible = pv;
-  V.card.obj.visible = cv;
-  // 片付けずに見えない状態で残す。素材を捨てると描画プログラムも捨てられ、
-  // 次に同じ演出が出たときに作り直しで止まるため
-  g.visible = false;
-  card.visible = false;
+  V.sparks.pts.visible = true;
+  try {
+    await V.renderer.compileAsync(V.scene, V.camera);
+    V.composer.render();
+    V.renderer.getContext().finish();
+  } finally {
+    V.particles.pts.visible = pv;
+    V.card.obj.visible = cv;
+    V.sparks.pts.visible = sv;
+    // 非表示の代表素材を残し、コンパイル済みのプログラムを保持する。
+    g.visible = false;
+    cards.forEach(dropCard);
+    actors.forEach(actor => actor.userData.remove());
+  }
 }
