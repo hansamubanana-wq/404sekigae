@@ -8,6 +8,7 @@ let seats = createInitialSeats();
 let locked = new Set();
 let hidden = new Set();   // 発表待ちの席
 let busy = false;
+let cancelSeatGesture = null;
 
 function createSeatPositionsColumnFirst() {
   const positions = [];
@@ -121,6 +122,7 @@ function updateStatus() {
 }
 
 function setBusy(state) {
+  if (state) cancelSeatGesture?.();
   busy = state;
   ["shuffleBtn", "saveBtn", "resetBtn", "printBtn"].forEach(id => {
     document.getElementById(id).disabled = state;
@@ -162,31 +164,54 @@ function onSeatHold(key) {
 function bindSeatGestures(surface, seatAt) {
   let press = null;
   const clearPress = () => {
-    if (press) clearTimeout(press.timer);
+    const current = press;
+    if (!current) return;
     press = null;
+    cancelSeatGesture = null;
+    clearTimeout(current.timer);
+    current.preview?.remove();
+    if (surface.hasPointerCapture(current.id)) surface.releasePointerCapture(current.id);
   };
   surface.addEventListener("pointerdown", e => {
-    if (busy || press || !e.isPrimary || e.button !== 0) return;
-    const key = seatAt(e);
+    if (busy || cancelSeatGesture || !e.isPrimary || e.button !== 0) return;
+    const key = seatAt(e.clientX, e.clientY);
     if (!key) return;
-    const start = { key, id: e.pointerId, x: e.clientX, y: e.clientY, held: false };
+    const start = { key, id: e.pointerId, x: e.clientX, y: e.clientY, mode: "pending", preview: null };
     start.timer = setTimeout(() => {
-      start.held = true;
+      start.mode = "hold";
       onSeatHold(key);
     }, 600);
     press = start;
+    cancelSeatGesture = clearPress;
     surface.setPointerCapture(e.pointerId);
   });
-  const moved = e => Math.hypot(e.clientX - press.x, e.clientY - press.y) > 12;
-  surface.addEventListener("pointermove", e => {
-    if (press?.id === e.pointerId && moved(e)) clearPress();
-  });
+  const trackMove = e => {
+    if (press?.id !== e.pointerId || press.mode === "hold") return;
+    if (press.mode === "pending" && Math.hypot(e.clientX - press.x, e.clientY - press.y) >= 8) {
+      clearTimeout(press.timer);
+      press.mode = "drag";
+      if (!locked.has(press.key)) {
+        const student = seats[press.key];
+        press.preview = document.createElement("div");
+        press.preview.className = `dragged-name ${student.gender}`;
+        press.preview.textContent = student.name;
+        press.preview.setAttribute("aria-hidden", "true");
+        document.body.appendChild(press.preview);
+      }
+    }
+    if (press.preview) {
+      press.preview.style.transform = `translate3d(${e.clientX}px, ${e.clientY - 16}px, 0) translate(-50%, -100%)`;
+    }
+  };
+  surface.addEventListener("pointermove", trackMove);
   surface.addEventListener("pointerup", e => {
     if (press?.id !== e.pointerId) return;
-    const { key, held } = press;
-    const tapped = !held && !moved(e);
+    trackMove(e);
+    const { key, mode } = press;
+    const target = mode === "drag" ? seatAt(e.clientX, e.clientY) : null;
     clearPress();
-    if (tapped) onSeatTap(key);
+    if (mode === "pending") onSeatTap(key);
+    else if (target) swapSeats(key, target);
   });
   for (const event of ["pointercancel", "lostpointercapture"]) {
     surface.addEventListener(event, e => { if (press?.id === e.pointerId) clearPress(); });
@@ -194,11 +219,15 @@ function bindSeatGestures(surface, seatAt) {
   surface.addEventListener("contextmenu", e => e.preventDefault());
 }
 
-async function onSeatTap(key) {
+function onSeatTap(key) {
   if (busy || locked.has(key)) return;
   const candidates = realSeatPositions.filter(other => other !== key && !locked.has(other));
   if (!candidates.length) return;
-  const other = pick(candidates);
+  swapSeats(key, pick(candidates));
+}
+
+async function swapSeats(key, other) {
+  if (busy || key === other || locked.has(key) || locked.has(other)) return;
   const moves = [{ s: seats[key], from: key, key: other }, { s: seats[other], from: other, key }];
   const assign = () => { for (const move of moves) seats[move.key] = move.s; };
 
@@ -284,6 +313,7 @@ async function shuffleSeats() {
 
 function resetSeats() {
   if (busy) return;
+  cancelSeatGesture?.();
   sfx("down", { vol: .7 });
   seats = createInitialSeats();
   locked.clear();
@@ -299,7 +329,11 @@ if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
   addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
 }
 addEventListener("DOMContentLoaded", () => {
-  bindSeatGestures(document.getElementById("sheet"), e => e.target.closest("[data-seat]")?.dataset.seat);
+  const sheet = document.getElementById("sheet");
+  bindSeatGestures(sheet, (x, y) => {
+    const seat = document.elementFromPoint(x, y)?.closest("[data-seat]");
+    if (seat && sheet.contains(seat)) return seat.dataset.seat;
+  });
   renderSheet();
   // 起動時に重い準備を全部済ませる (本番中に止まらないように)。ローディングは長くなってよい
   initWorld()

@@ -35,6 +35,22 @@ body {
 }
 body.ready #scene { opacity: 1; }
 
+.dragged-name {
+  --c: var(--boy);
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 20;
+  pointer-events: none;
+  padding: 5px 12px;
+  border: 2px solid var(--c);
+  border-radius: 8px;
+  background: #10152c;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.dragged-name.girl { --c: var(--girl); }
+
 /* ===== 上のバー ===== */
 .hud {
   position: fixed;
@@ -365,6 +381,7 @@ body.fallback .sheet-wrap {
   border: 2px solid var(--c);
   background: color-mix(in srgb, var(--c) 25%, #0b1030);
   cursor: pointer;
+  touch-action: none;
 }
 .sheet .seat.girl { --c: var(--girl); }
 .sheet .seat.locked { box-shadow: 0 0 0 3px var(--gold); }
