@@ -8,7 +8,7 @@
 const SND = { ctx: null, master: null, music: null, list: null, buf: {}, loading: null };
 const BGM_FILES = { main: "media/bgm_main.m4a", tension: "media/bgm_tension.m4a", finale: "media/bgm_finale.m4a" };
 const BGM_FADE = 1.25;
-const BGM_VOLUME = .36;
+const BGM_VOLUME = { main: .36, tension: .44, finale: .6 };
 const SFX_VOLUME = .85;     // 効果音全体の音量 (BGM とのバランス)
 const BGM = { files: new Map(), request: null, playing: null };
 
@@ -131,7 +131,7 @@ async function bgm(name) {
     src.onended = () => { src.disconnect(); gain.disconnect(); };
     const now = ctx.currentTime;
     gain.gain.setValueAtTime(0, now);
-    gain.gain.linearRampToValueAtTime(BGM_VOLUME, now + BGM_FADE);
+    gain.gain.linearRampToValueAtTime(BGM_VOLUME[name], now + BGM_FADE);
     src.start(now);
     fadeOutBgm(BGM.playing, BGM_FADE);
     BGM.playing = { name, src, gain, started: now };
@@ -147,7 +147,7 @@ function fadeOutBgm(track, fade) {
   if (!track) return;
   const now = SND.ctx.currentTime;
   // 曲の切り替えが続いても、その時点のフェードイン音量から下げる。
-  const level = BGM_VOLUME * Math.min(1, (now - track.started) / BGM_FADE);
+  const level = BGM_VOLUME[track.name] * Math.min(1, (now - track.started) / BGM_FADE);
   const volume = track.gain.gain;
   volume.cancelScheduledValues(now);
   volume.setValueAtTime(fade > 0 ? level : 0, now);

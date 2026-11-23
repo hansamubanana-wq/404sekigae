@@ -717,15 +717,19 @@ function rippleFromSeat(key) {
     const seat = V.seat[key];
     const dx = seat.base.x - center.x, dz = seat.base.z - center.z;
     const distance = Math.hypot(dx, dz);
-    return { seat, delay: distance * 73, direction: distance ? dx / distance : 0, moving: false };
+    return {
+      seat, delay: distance * 105, x: distance ? dx / distance : 0, z: distance ? dz / distance : 0,
+      strength: 1 / (1 + distance * .035), moving: false,
+    };
   });
-  const crest = 560;
+  const crest = 1120;
   const duration = Math.max(...wave.map(item => item.delay)) + crest;
-  const shift = (seat, x, y) => {
+  const shift = (seat, x, y, z) => {
     seat.rippleX = x;
     seat.rippleY = y;
+    seat.rippleZ = z;
     for (const [mesh, level] of V.deskMeshes) {
-      mesh.setMatrixAt(seat.index, matrix.makeTranslation(seat.base.x + x, level + y, seat.base.z - .12));
+      mesh.setMatrixAt(seat.index, matrix.makeTranslation(seat.base.x + x, level + y, seat.base.z + z - .12));
     }
   };
   return tween(duration, t => {
@@ -734,13 +738,13 @@ function rippleFromSeat(key) {
       const p = (t * duration - item.delay) / crest;
       if (p < 0 || (p >= 1 && !item.moving)) continue;
       item.moving = p < 1;
-      const kick = item.moving ? Math.sin(p * Math.PI * 3.45) * (1 - p) ** 2 : 0;
-      shift(item.seat, item.direction * kick * .18, kick * .34);
+      const kick = item.moving ? item.strength * Math.sin(p * Math.PI * 4.5) * (1 - p) ** 2 : 0;
+      shift(item.seat, item.x * kick * .46, kick * .96, item.z * kick * .46);
       changed = true;
     }
     if (changed) for (const [mesh] of V.deskMeshes) mesh.instanceMatrix.needsUpdate = true;
   }, ease.linear).finally(() => {
-    for (const { seat, moving } of wave) if (moving) shift(seat, 0, 0);
+    for (const { seat, moving } of wave) if (moving) shift(seat, 0, 0, 0);
     for (const [mesh] of V.deskMeshes) mesh.instanceMatrix.needsUpdate = true;
   });
 }
@@ -1137,6 +1141,7 @@ function frame(now) {
     const o = V.seat[key];
     o.pivot.position.x = o.base.x + (o.rippleX || 0);
     o.pivot.position.y = o.base.y + Math.sin(t * 1.3 + o.phase) * .03 + (o.jump || 0) + (o.rippleY || 0);
+    o.pivot.position.z = o.base.z + (o.rippleZ || 0);
     if (V.billboard) o.pivot.quaternion.copy(V.camera.quaternion);
   }
 

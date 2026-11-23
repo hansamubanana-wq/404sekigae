@@ -34,6 +34,14 @@ body {
   transition: opacity 1.2s ease;
 }
 body.ready #scene { opacity: 1; }
+#frontImpactFlash {
+  position: fixed;
+  inset: 0;
+  z-index: 12;
+  pointer-events: none;
+  background: #fff2dc;
+  opacity: 0;
+}
 
 /* ===== 上のバー ===== */
 .hud {
@@ -473,7 +481,7 @@ body.fallback .sheet-wrap {
 @media print {
   @page { size: landscape; margin: 10mm; }
   html, body { height: auto; overflow: visible; background: #fff !important; color: #111827; }
-  #scene, .hud, .loading, .bubble, .banner, .caption, .frontrow, .fr-iris, .seat-history { display: none !important; }
+  #scene, #frontImpactFlash, .hud, .loading, .bubble, .banner, .caption, .frontrow, .fr-iris, .seat-history { display: none !important; }
   body::before, body::after { display: none; }
   .sheet-wrap { display: flex !important; flex-direction: column; position: static !important; }
   .sheet-desk { color: #111827; border-color: #111827; }
