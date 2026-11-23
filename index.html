@@ -51,6 +51,9 @@
       <svg viewBox="0 0 24 24"><path d="M5 3h11l3 3v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M7 3v6h8V3M7 21v-7h10v7"/></svg>
       <svg class="check" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>
     </button>
+    <button class="icon" id="historyBtn" type="button" title="履歴" aria-label="履歴" aria-haspopup="dialog" aria-controls="seatHistory">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4v5h5M3.5 9a9 9 0 1 1-.2 5M12 7v5l3 2"/></svg>
+    </button>
     <button class="icon" id="resetBtn" onclick="resetSeats()" title="元に戻す" aria-label="元に戻す">
       <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
     </button>
@@ -60,6 +63,15 @@
     <button class="start" id="shuffleBtn" onclick="shuffleSeats()"><span class="tri"></span>席替えスタート</button>
   </div>
 </header>
+
+<dialog class="seat-history" id="seatHistory" aria-labelledby="seatHistoryTitle">
+  <header>
+    <h2 id="seatHistoryTitle">席の履歴</h2>
+    <form method="dialog"><button type="submit" autofocus>閉じる</button></form>
+  </header>
+  <p id="seatHistoryStatus" role="status"></p>
+  <ul id="seatHistoryList"></ul>
+</dialog>
 
 <div class="loading" id="loading"><div class="ring"></div><div class="load-text">準備中…</div></div>
 

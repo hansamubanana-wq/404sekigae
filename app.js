@@ -87,12 +87,28 @@ function shuffleArray(array) {
 }
 
 /* ---------- 保存 / 読み込み ---------- */
-function saveSeats() {
-  const data = {
+const HISTORY_KEY = "404seatHistory";
+const HISTORY_LIMIT = 30;
+const historyDate = new Intl.DateTimeFormat("ja-JP", { dateStyle: "medium", timeStyle: "medium" });
+
+function seatSnapshot() {
+  return {
     seats: Object.fromEntries(Object.entries(seats).map(([k, v]) => [k, v.no])),
     locked: [...locked],
   };
-  try { localStorage.setItem("404seats", JSON.stringify(data)); } catch {}
+}
+
+function decodeSeatSnapshot(data) {
+  const byNo = new Map(studentsOriginal.map(s => [s.no, s]));
+  const loaded = Object.fromEntries(realSeatPositions.map(pos => [pos, byNo.get(data?.seats?.[pos])]));
+  const students = Object.values(loaded);
+  if (students.includes(undefined) || new Set(students).size !== realSeatPositions.length) return null;
+  const locks = Array.isArray(data.locked) ? data.locked : [];
+  return { seats: loaded, locked: new Set(locks.filter(k => realSeatPositions.includes(k))) };
+}
+
+function saveSeats() {
+  try { localStorage.setItem("404seats", JSON.stringify(seatSnapshot())); } catch {}
   const btn = document.getElementById("saveBtn");
   btn.classList.add("done");
   sfx("save");
@@ -103,18 +119,73 @@ function loadSeats() {
   try {
     const raw = localStorage.getItem("404seats");
     if (!raw) return;
-    const data = JSON.parse(raw);
-    const byNo = Object.fromEntries(studentsOriginal.map(s => [s.no, s]));
-    const loaded = {};
-    for (const pos of realSeatPositions) {
-      const s = byNo[data.seats[pos]];
-      if (!s) return;               // 席の配置が変わる前の古いデータは使わない
-      loaded[pos] = s;
-    }
-    if (new Set(Object.values(loaded)).size !== realSeatPositions.length) return;
-    seats = loaded;
-    locked = new Set((data.locked || []).filter(k => realSeatPositions.includes(k)));
+    const loaded = decodeSeatSnapshot(JSON.parse(raw));
+    if (loaded) ({ seats, locked } = loaded);
   } catch {}
+}
+
+function readSeatHistory() {
+  try {
+    const history = JSON.parse(localStorage.getItem(HISTORY_KEY));
+    if (Array.isArray(history)) return history.filter(entry =>
+      typeof entry?.operation === "string" && typeof entry.at === "number" &&
+      Number.isFinite(new Date(entry.at).getTime()) && decodeSeatSnapshot(entry)
+    ).slice(0, HISTORY_LIMIT);
+  } catch {}
+  return [];
+}
+
+function writeSeatHistory(...entries) {
+  try {
+    const history = [...entries, ...readSeatHistory()].slice(0, HISTORY_LIMIT);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function recordSeatHistory(operation) {
+  writeSeatHistory({ ...seatSnapshot(), at: Date.now(), operation });
+}
+
+function openSeatHistory() {
+  const dialog = document.getElementById("seatHistory");
+  if (busy || dialog.open) return;
+  const list = document.getElementById("seatHistoryList");
+  const status = document.getElementById("seatHistoryStatus");
+  const history = readSeatHistory();
+  list.replaceChildren();
+  status.textContent = history.length ? "" : "履歴はまだありません";
+  for (const entry of history) {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    const date = document.createElement("time");
+    button.type = "button";
+    date.dateTime = new Date(entry.at).toISOString();
+    date.textContent = historyDate.format(entry.at);
+    button.append(entry.operation, date);
+    button.addEventListener("click", () => {
+      if (busy) return;
+      const restored = decodeSeatSnapshot(entry);
+      const at = Date.now();
+      if (!writeSeatHistory(
+        { seats: entry.seats, locked: [...restored.locked], at, operation: "履歴から復元" },
+        { ...seatSnapshot(), at, operation: "履歴から復元する前" },
+      )) {
+        status.textContent = "現在の席を履歴に記録できませんでした";
+        return;
+      }
+      ({ seats, locked } = restored);
+      setSeatMode(null);
+      if (worldReady) syncAllSeats();
+      sfx("switch");
+      dialog.close();
+    });
+    item.append(button);
+    list.append(item);
+  }
+  dialog.showModal();
 }
 
 /* ---------- 画面 ---------- */
@@ -125,6 +196,8 @@ function updateStatus() {
 
 function setBusy(state) {
   busy = state;
+  document.getElementById("historyBtn").hidden = state;
+  if (state) document.getElementById("seatHistory").close();
   ["shuffleBtn", "saveBtn", "resetBtn", "printBtn"].forEach(id => {
     document.getElementById(id).disabled = state;
   });
@@ -243,6 +316,7 @@ async function swapSeats(key, other) {
   soundUnlock();
   if (!worldReady) {
     assign();
+    recordSeatHistory("手動で入れ替え");
     sfx("switch");
     renderSheet();
     return;
@@ -254,6 +328,7 @@ async function swapSeats(key, other) {
     console.error(error);
   } finally {
     assign();
+    recordSeatHistory("手動で入れ替え");
     hidden.clear();
     syncAllSeats();
     setBusy(false);
@@ -271,7 +346,8 @@ async function shuffleSeats(scope = null) {
   const shuffled = shuffleArray(movable.map(pos => seats[pos]));
   movable.forEach((pos, i) => { seats[pos] = shuffled[i]; });
 
-  if (!worldReady) { renderSheet(); return; }
+  const operation = scope ? "選んだ席でやり直し" : "席替え";
+  if (!worldReady) { recordSeatHistory(operation); renderSheet(); return; }
   soundUnlock();
   sfx("click");
   frontRowPrime(movable);   // 最前列中央の動画を、ボタン操作の中で再生できる状態にしておく
@@ -318,6 +394,7 @@ async function shuffleSeats(scope = null) {
     if (worldReady) { endTension(); letterbox(false); V.camRig = null; V.billboard = false; setPlateDim(1); V.spotPower = 1; }
     hidden.clear();
     replayScope = null;
+    recordSeatHistory(operation);
     syncAllSeats();
     setBusy(false);
     renderSheet();
@@ -331,6 +408,7 @@ function resetSeats() {
   seats = createInitialSeats();
   locked.clear();
   hidden.clear();
+  recordSeatHistory("元に戻す");
   if (worldReady) syncAllSeats();
   renderSheet();
 }
@@ -355,6 +433,7 @@ addEventListener("DOMContentLoaded", () => {
   document.getElementById("runSelectedBtn").addEventListener("click", () => {
     if (seatMode === "retry") shuffleSeats(new Set(selectedSeats));
   });
+  document.getElementById("historyBtn").addEventListener("click", openSeatHistory);
   renderSheet();
   // 起動時に重い準備を全部済ませる (本番中に止まらないように)。ローディングは長くなってよい
   initWorld()
