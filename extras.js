@@ -742,6 +742,7 @@ async function cutTension(remain = 3) {
     V.spots.forEach((s, i) => s.col.copy(cols[i]).lerp(new THREE.Color(0xff2a2a), t));
   }, ease.inOut);
   letterbox(true);
+  bgm("tension");
   banner(`ラスト${remain}人…`, 2600, "alert");
   for (let b = 0; b < 3; b++) {
     shake(.06);

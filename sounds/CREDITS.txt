@@ -1,4 +1,7 @@
-効果音の素材 (すべて CC0 / パブリックドメイン)
+Sonniss GDC 2026 Game Audio Bundle（ライセンス: https://sonniss.com/gdc-bundle-license/）
+使用素材と切り出し位置は SOURCES.md を参照してください。
+
+既存の効果音の素材 (CC0 / パブリックドメイン)
 OpenGameArt.org より
 
 - Kenney「Interface Sounds」「Casino Audio」「Sci-fi Sounds」「Digital Audio」「RPG Audio」「Music Jingles」
