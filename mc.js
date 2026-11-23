@@ -1,13 +1,15 @@
 "use strict";
 
 const MC_LINES = [
-  { at: 1.34, text: "皆さん、お待たせしました！" },
-  { at: 4.32, text: "404席替え、ただいまスタート！" },
-  { at: 8.70, text: "さあ、最初の発表は……" },
+  { at: .19, text: "皆さん、お待たせしました！" },
+  { at: 3.67, text: "404席替え、ただいまスタート！" },
+  { at: 11.07, text: "さあ、最初の発表は……" },
 ];
-const MC_SHORT_AT = 8.42;
-const MC_FANFARE_AT = 6.99;
-const MC_END = 12.4;
+const MC_SHORT_AT = 10.76;
+const MC_FANFARE_AT = 8.23;
+const MC_SUBTITLE_OUT = 13.28;
+const MC_END = 14.55;
+const MC_SHORT_END = 14.18;
 const MC_WALK_END = 4.14;
 const MC_SEEN_KEY = "404-mc-intro-seen";
 let mcHost = null;
@@ -71,24 +73,25 @@ function mcShowCaption(t, line, previous, current, box) {
   previous.style.opacity = 1 - slide * .4;
   current.style.transform = `translateY(${(1 - slide) * 30}%)`;
   current.style.opacity = clamp01((progress - .18) / .82);
-  box.style.opacity = 1 - ease.inOut(clamp01((t - 11.0) / .45));
+  box.style.opacity = 1 - ease.inOut(clamp01((t - MC_SUBTITLE_OUT) / .45));
 }
 
 function mcCamera(rig, actor, t, short, offset, end) {
   const { camera, aim, from, fromRotation, defaultPos, defaultRotation } = rig;
   const tracking = ease.inOut(clamp01((t - .65) / 1.7));
   const settle = ease.inOut(clamp01((t - 2.96) / 1.31));
-  const punch = ease.out(clamp01((t - 6.81) / .31));
-  const wide = ease.inOut(clamp01((t - (short ? 8.92 : 8.56)) / (end - (short ? 8.92 : 8.56))));
-  const x = lerp(lerp(3.87, 4.45, tracking), lerp(1.02, .55, punch), settle);
+  const punch = ease.out(clamp01((t - (MC_FANFARE_AT - .15)) / .31));
+  const pullBackAt = MC_LINES[2].at + (short ? .16 : 0);
+  const wide = ease.inOut(clamp01((t - pullBackAt) / (end - pullBackAt)));
+  const x = lerp(lerp(4.85, 4.45, tracking), lerp(1.02, .55, punch), settle);
   const y = lerp(lerp(.70, 1.28, tracking), lerp(1.70, 1.82, punch), settle);
   const z = lerp(lerp(.49, 1.02, tracking), lerp(3.77, 2.73, punch), settle);
   const fit = clamp01((1.15 - camera.aspect) / .62);
   const cameraZ = Math.max(actor.position.z + z * (1 + fit * .45), PODIUM_Z + 1.05);
   camera.position.set(actor.position.x + x * (1 + fit * .24), y, cameraZ);
-  aim.set(actor.position.x, lerp(lerp(1.04, .97, tracking), lerp(1.48, 1.58, punch), settle), actor.position.z);
+  aim.set(actor.position.x, lerp(lerp(.96, .97, tracking), lerp(1.48, 1.58, punch), settle), actor.position.z);
   camera.lookAt(aim);
-  const enter = 1 - ease.out(clamp01((t - offset) / (short ? .38 : .48)));
+  const enter = 1 - ease.out(clamp01((t - offset) / (short ? .30 : .24)));
   camera.position.lerp(from, enter).lerp(defaultPos, wide);
   camera.quaternion.slerp(fromRotation, enter).slerp(defaultRotation, wide);
   return wide;
@@ -111,7 +114,7 @@ async function playMcIntro(unlocked) {
   let short = mcSeen;
   try { short ||= sessionStorage.getItem(MC_SEEN_KEY) === "1"; } catch {}
   const offset = short ? MC_SHORT_AT : 0;
-  const end = short ? 11.48 : MC_END;
+  const end = short ? MC_SHORT_END : MC_END;
   const start = ctx.currentTime + .035;
   const voice = ctx.createBufferSource();
   const gain = ctx.createGain();
@@ -128,7 +131,7 @@ async function playMcIntro(unlocked) {
   const heading = v3();
   const light = V.spotFocusAt.clone();
   const focus = V.spotFocus;
-  const power = V.spotPower;
+  const spotPower = V.spotPower;
   const warm = V.roomWarmLight.intensity;
   const signVisible = V.podiumSign.visible;
   let line = -1, step = 0, fanfare = false, voiceLevel = 0, watchdog;
@@ -146,18 +149,18 @@ async function playMcIntro(unlocked) {
     host.actor.rotation.y = lerp(Math.atan2(heading.x, heading.z), 0, turn);
     const walking = (1 - ease.out(clamp01((t - 3.90) / .24))) * clamp01(t / .28);
     const distance = host.routeLength * pace;
-    const inSpeech = t >= MC_LINES[0].at && t < 10.36;
+    const inSpeech = t >= MC_LINES[0].at && t < host.voice.duration;
     meter.getFloatTimeDomainData(wave);
-    let power = 0;
-    for (const sample of wave) power += sample * sample;
-    const speaking = inSpeech ? Math.min(1, Math.sqrt(power / wave.length) * 6) : 0;
+    let energy = 0;
+    for (const sample of wave) energy += sample * sample;
+    const speaking = inSpeech ? Math.min(1, Math.sqrt(energy / wave.length) * 6) : 0;
     voiceLevel = lerp(voiceLevel, speaking, .47);
     const wide = mcCamera(rig, host.actor, t, short, offset, end);
     const angle = Math.atan2(camera.position.x - host.actor.position.x, camera.position.z - host.actor.position.z) - host.actor.rotation.y;
     poseMc(host, t, distance, walking, voiceLevel, Math.atan2(Math.sin(angle), Math.cos(angle)));
     V.spotFocusAt.copy(host.actor.position);
     V.spotFocus = .43 * (1 - wide);
-    V.spotPower = lerp(power * .32, power, wide);
+    V.spotPower = lerp(spotPower * .32, spotPower, wide);
     V.roomWarmLight.intensity = lerp(warm * .45, warm, wide);
 
     const footfall = Math.floor((distance + .17) / .58);
@@ -167,7 +170,7 @@ async function playMcIntro(unlocked) {
     }
     if (!fanfare && t >= (short ? MC_SHORT_AT + .08 : MC_FANFARE_AT)) {
       fanfare = true;
-      sfx("jingle_start", { vol: short ? .30 : .44 });
+      sfx("jingle_start", { vol: short ? .27 : .33 });
       const { x, z } = host.actor.position;
       const at = V.stage.worldToLocal(v3(x + .30, 1.41, z + .26));
       burst(at, [hdr(0xa7d7ff, 2.6), hdr(0xffd199, 2.8)], 24, 1.5, { life: .52, size: .039, grav: .2 });
@@ -224,7 +227,7 @@ async function playMcIntro(unlocked) {
     camera.quaternion.copy(defaultRotation);
     V.spotFocusAt.copy(light);
     V.spotFocus = focus;
-    V.spotPower = power;
+    V.spotPower = spotPower;
     V.roomWarmLight.intensity = warm;
     bgmDuck(false);
   }

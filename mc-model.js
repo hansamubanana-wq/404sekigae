@@ -223,10 +223,12 @@ function poseMc(host, t, distance, walking, voice, cameraAngle = 0) {
     foot.rotation.x = -hip.rotation.x - .72 * knee.rotation.x;
   });
 
-  const welcome = ease.inOut(clamp01((t - 1.21) / .35)) * (1 - ease.inOut(clamp01((t - 2.62) / .48)));
-  const fist = ease.out(clamp01((t - 6.69) / .28)) * (1 - ease.inOut(clamp01((t - 7.29) / .6)));
-  const reveal = ease.inOut(clamp01((t - 8.49) / .42)) * (1 - ease.inOut(clamp01((t - 10.03) / .71)));
-  const speaking = ease.inOut(clamp01((t - 1.00) / .30)) * (1 - ease.inOut(clamp01((t - 10.13) / .52)));
+  const welcome = ease.inOut(clamp01((t - MC_LINES[0].at) / .34)) * (1 - ease.inOut(clamp01((t - 2.69) / .48)));
+  const fist = ease.out(clamp01((t - (MC_FANFARE_AT - .29)) / .28)) *
+    (1 - ease.inOut(clamp01((t - (MC_FANFARE_AT + 1.02)) / .77)));
+  const reveal = ease.inOut(clamp01((t - (MC_LINES[2].at - .13)) / .42)) *
+    (1 - ease.inOut(clamp01((t - (MC_SUBTITLE_OUT - .28)) / .74)));
+  const speaking = ease.out(clamp01(t / .22)) * (1 - ease.inOut(clamp01((t - MC_SUBTITLE_OUT) / .52)));
   const side = Math.max(welcome, reveal, fist);
   placeMcArm(host, host.arms[0], lerp(-.339,-.155,speaking), lerp(.84,1.443,speaking), lerp(.03 + sway * .16,.36,speaking));
   placeMcArm(host, host.arms[1], lerp(.351,.665,side) - .12 * fist, .84 + .375 * welcome + .815 * fist + .388 * reveal,
@@ -241,14 +243,15 @@ function poseMc(host, t, distance, walking, voice, cameraAngle = 0) {
 
   const glance = walking * THREE.MathUtils.clamp(cameraAngle * .72, -.69, .65);
   host.head.rotation.set(-.031 * voice - .050 * fist, glance - .09 * reveal, .07 * welcome + sway * .034 - .08 * fist);
-  const blinkPhase = Math.min(Math.abs(t - .80), Math.abs(t - 3.14), Math.abs(t - 5.67), Math.abs(t - 8.23), Math.abs(t - 10.18));
+  const blinkPhase = Math.min(Math.abs(t - .85), Math.abs(t - 3.31), Math.abs(t - 5.67), Math.abs(t - 7.90), Math.abs(t - 10.72), Math.abs(t - 12.40));
   const blink = clamp01(blinkPhase / .082);
   for (const { eye, brow, side: eyeSide } of host.eyes) {
     eye.scale.y = Math.max(.07, blink * (1 + voice * .10 - fist * .16));
     brow.position.y = .168 + .020 * voice + .022 * fist + .010 * reveal * eyeSide;
     brow.rotation.z = eyeSide * (.18 * welcome + .19 * fist - .08 * reveal);
   }
-  host.smile.visible = fist > .50 && (voice < .32 || t > 7.15);
+  host.smile.visible = fist > .50 && t >= MC_FANFARE_AT;
+  host.smile.scale.y = .72 + .48 * voice;
   host.mouth.visible = !host.smile.visible;
   host.mouth.scale.set(1 + .17 * welcome + .14 * fist, .19 + .91 * voice + .13 * welcome, 1);
 }
