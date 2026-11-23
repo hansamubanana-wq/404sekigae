@@ -781,9 +781,9 @@ async function announce(s, key, index, total, force = {}) {
 /* =========================================================
    スタート / フィナーレ
    ========================================================= */
-async function showStart(movable) {
+async function showStart(movable, announced = false) {
   V.spotSpeed = 5;
-  const b = banner("席替え、スタート！", 1200, "kickoff");
+  const b = announced ? null : banner("席替え、スタート！", 1200, "kickoff");
   veil(true, 300);
   const order = [...movable].sort((a, b2) => seatXZ(b2).z - seatXZ(a).z);
   // 名札が後ろの列から次々と裏返る

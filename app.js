@@ -349,7 +349,7 @@ async function shuffleSeats(scope = null) {
   const operation = scope ? "選んだ席でやり直し" : "席替え";
   if (!worldReady) { recordSeatHistory(operation); renderSheet(); return; }
   frontRowPrime(movable);   // ボタン操作の中で直接、音付き再生を試す
-  soundUnlock();
+  const unlocked = soundUnlock();
   sfx("click");
 
   replayScope = scope;
@@ -360,7 +360,11 @@ async function shuffleSeats(scope = null) {
     hidden = new Set(movable);
     if (scope) realSeatPositions.forEach(seatLook);
     lastIntro = lastFly = null;
-    await showStart(movable);
+    const announced = scope ? false : await playMcIntro(unlocked).catch(error => {
+      console.warn("司会者の演出を開始できませんでした", error);
+      return false;
+    });
+    await showStart(movable, announced);
     bgmPreload();
     updateStatus();
     const order = placeFrontRowLate(shuffleArray(movable));   // 最前列中央は最後の3人の中に
@@ -445,9 +449,18 @@ addEventListener("DOMContentLoaded", () => {
   // 起動時に重い準備を全部済ませる (本番中に止まらないように)。ローディングは長くなってよい
   initWorld()
     .then(async () => {
+      const soundReady = soundInit();
+      const mc = loadMcHost().catch(error => {
+        console.warn("司会者の素材を準備できませんでした", error);
+        return null;
+      });
       try { await warmUpShaders(); } catch (e) { console.warn(e); }
       try { frontRowPreload(); } catch {}
-      await Promise.race([soundInit(), sleep(10000)]);   // 効果音の読み込みと変換
+      await Promise.race([soundReady, sleep(10000)]);   // 効果音の読み込みと変換
+      const host = await Promise.race([mc, sleep(10000)]);
+      if (host) {
+        try { await warmUpMc(host); } catch (error) { console.warn("司会者の描画を準備できませんでした", error); }
+      }
       V.renderer.setAnimationLoop(frame);
       document.body.classList.add("ready");
       updateSeatTools();
