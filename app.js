@@ -360,11 +360,11 @@ async function shuffleSeats(scope = null) {
     hidden = new Set(movable);
     if (scope) realSeatPositions.forEach(seatLook);
     lastIntro = lastFly = null;
-    const announced = scope ? false : await playMcIntro(unlocked).catch(error => {
+    const mc = scope ? null : await playMcIntro(unlocked).catch(error => {
       console.warn("司会者の演出を開始できませんでした", error);
-      return false;
+      return null;
     });
-    await showStart(movable, announced);
+    await showStart(movable, mc ?? undefined);
     bgmPreload();
     updateStatus();
     const order = placeFrontRowLate(shuffleArray(movable));   // 最前列中央は最後の3人の中に
@@ -377,6 +377,10 @@ async function shuffleSeats(scope = null) {
       if (R >= 6 && r === Math.floor(R / 2)) await cutHalfway(hidden.size);
       if (!hasFront && R >= 4 && r === R - 2) await cutTension(hidden.size);
       const list = rounds[r].map(key => ({ s: seats[key], key }));
+      if (r === 0 && mc?.quick) {
+        mcTransitionSfx("hit", { vol: .32 });
+        shake(.065);
+      }
       if (list.some(x => x.key === FRONT_ROW.key)) {
         // 残り3人: 「ラスト3人…」→ 3人を見せる → 動画で最前列の中央を明かす → 残りの2人
         if (list.length >= 3) await cutTension(hidden.size);

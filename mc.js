@@ -8,8 +8,8 @@ const MC_LINES = [
 const MC_SHORT_AT = 10.76;
 const MC_FANFARE_AT = 8.23;
 const MC_SUBTITLE_OUT = 13.28;
-const MC_END = 14.55;
-const MC_SHORT_END = 14.18;
+const MC_RISE_AT = 12.68;
+const MC_END = 13.34;
 const MC_WALK_END = 4.14;
 const MC_SEEN_KEY = "404-mc-intro-seen";
 let mcHost = null;
@@ -73,7 +73,8 @@ function mcShowCaption(t, line, previous, current, box) {
   previous.style.opacity = 1 - slide * .4;
   current.style.transform = `translateY(${(1 - slide) * 30}%)`;
   current.style.opacity = clamp01((progress - .18) / .82);
-  box.style.opacity = 1 - ease.inOut(clamp01((t - MC_SUBTITLE_OUT) / .45));
+  const fade = .21;
+  box.style.opacity = 1 - ease.inOut(clamp01((t - (MC_END - fade)) / fade));
 }
 
 function mcCamera(rig, actor, t, short, offset, end) {
@@ -99,10 +100,10 @@ function mcCamera(rig, actor, t, short, offset, end) {
 
 async function playMcIntro(unlocked) {
   const host = mcHost;
-  if (!host) return false;
+  if (!host) return null;
   await Promise.race([unlocked, new Promise(resolve => setTimeout(resolve, 650))]);
   const ctx = SND.ctx;
-  if (ctx.state !== "running" || document.hidden) return false;
+  if (ctx.state !== "running" || document.hidden) return null;
 
   const ui = document.getElementById("mcIntro");
   const skip = ui.querySelector("button");
@@ -114,7 +115,7 @@ async function playMcIntro(unlocked) {
   let short = mcSeen;
   try { short ||= sessionStorage.getItem(MC_SEEN_KEY) === "1"; } catch {}
   const offset = short ? MC_SHORT_AT : 0;
-  const end = short ? MC_SHORT_END : MC_END;
+  const end = MC_END;
   const start = ctx.currentTime + .035;
   const voice = ctx.createBufferSource();
   const gain = ctx.createGain();
@@ -134,12 +135,13 @@ async function playMcIntro(unlocked) {
   const spotPower = V.spotPower;
   const warm = V.roomWarmLight.intensity;
   const signVisible = V.podiumSign.visible;
-  let line = -1, step = 0, fanfare = false, voiceLevel = 0, watchdog;
+  let line = -1, step = 0, fanfare = false, voiceLevel = 0, watchdog, rise;
   let resolve;
   const complete = new Promise(done => { resolve = done; });
-  const finish = () => resolve();
+  const finish = () => resolve(false);
   const onHidden = () => { if (document.hidden) finish(); };
   const onAudioState = () => { if (ctx.state !== "running") finish(); };
+  let completed = false;
 
   function update(t) {
     const pace = clamp01((t - .09) / (MC_WALK_END - .09));
@@ -195,13 +197,14 @@ async function playMcIntro(unlocked) {
     ctx.addEventListener("statechange", onAudioState);
     bgmDuck(true, .35);
     voice.start(start, offset);
+    rise = mcTransitionSfx("rise", { vol: .29, delay: Math.max(0, start + MC_RISE_AT - offset - ctx.currentTime) });
     mcSeen = true;
     try { sessionStorage.setItem(MC_SEEN_KEY, "1"); } catch {}
     V.camRig = () => {
       const t = offset + Math.max(0, ctx.currentTime - start);
-      if (t >= end) finish();
       try {
         update(Math.min(t, end));
+        if (t >= end) resolve(true);
       } catch (error) {
         console.warn("司会者の演出を続けられませんでした", error);
         finish();
@@ -209,12 +212,13 @@ async function playMcIntro(unlocked) {
     };
     // 描画が止まっても、発表への引き継ぎを待ち続けない。
     watchdog = setTimeout(finish, (end - offset + 1.5) * 1000);
-    await complete;
+    completed = await complete;
   } finally {
     clearTimeout(watchdog);
     const now = ctx.currentTime;
     gain.gain.setTargetAtTime(0, now, .025);
     try { voice.stop(now + .10); } catch {}
+    if (!completed) rise?.stop(.035);
     skip.removeEventListener("click", finish);
     document.removeEventListener("visibilitychange", onHidden);
     ctx.removeEventListener("statechange", onAudioState);
@@ -231,5 +235,5 @@ async function playMcIntro(unlocked) {
     V.roomWarmLight.intensity = warm;
     bgmDuck(false);
   }
-  return fanfare;
+  return { announced: fanfare, quick: completed };
 }
