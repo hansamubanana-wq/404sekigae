@@ -655,14 +655,13 @@ function buildDesks() {
   }), n);
   V.scene.add(ped, top, strip, glow);
   V.deskParts = { ped, top, strip, glow, color: new THREE.Color() };
+  V.deskMeshes = [[ped, .2], [top, .45], [strip, .4], [glow, .015]];
+  for (const [mesh] of V.deskMeshes) mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   const matrix = new THREE.Matrix4();
 
   realSeatPositions.forEach((key, index) => {
     const { x, z } = seatXZ(key);
-    ped.setMatrixAt(index, matrix.makeTranslation(x, .2, z));
-    top.setMatrixAt(index, matrix.makeTranslation(x, .45, z));
-    strip.setMatrixAt(index, matrix.makeTranslation(x, .4, z));
-    glow.setMatrixAt(index, matrix.makeTranslation(x, .015, z));
+    for (const [mesh, level] of V.deskMeshes) mesh.setMatrixAt(index, matrix.makeTranslation(x, level, z));
 
     const pivot = new THREE.Group();
     pivot.position.set(x, PLATE_Y, z + .12);
@@ -699,14 +698,51 @@ function seatLook(key) {
   if (!o) return;
   const s = seats[key];
   const isHidden = hidden.has(key);
-  const isLocked = locked.has(key);
+  const isLocked = seatIsLocked(key);
+  const isSelected = selectedSeats.has(key);
   o.front.material.map = V.plateTex[s.no];
   const { glow, color } = V.deskParts;
   setDeskStrip(o, color.set(isHidden ? 0x8fa3ff : HEX[s.gender]), isHidden ? .35 : 2.4);
   glow.setColorAt(o.index, color.set(isHidden ? 0x6070ff : HEX[s.gender]).multiplyScalar(isHidden ? .08 : .32));
   glow.instanceColor.needsUpdate = true;
-  o.frame.visible = isLocked;
+  o.frame.visible = isLocked || isSelected;
+  if (o.frame.visible) o.frame.material.color.setHex(isLocked ? HEX.gold : 0x67e8f9).multiplyScalar(1.25);
   o.lock.visible = isLocked;
+}
+
+function rippleFromSeat(key) {
+  const center = V.seat[key].base;
+  const matrix = new THREE.Matrix4();
+  const wave = realSeatPositions.map(key => {
+    const seat = V.seat[key];
+    const dx = seat.base.x - center.x, dz = seat.base.z - center.z;
+    const distance = Math.hypot(dx, dz);
+    return { seat, delay: distance * 73, direction: distance ? dx / distance : 0, moving: false };
+  });
+  const crest = 560;
+  const duration = Math.max(...wave.map(item => item.delay)) + crest;
+  const shift = (seat, x, y) => {
+    seat.rippleX = x;
+    seat.rippleY = y;
+    for (const [mesh, level] of V.deskMeshes) {
+      mesh.setMatrixAt(seat.index, matrix.makeTranslation(seat.base.x + x, level + y, seat.base.z - .12));
+    }
+  };
+  return tween(duration, t => {
+    let changed = false;
+    for (const item of wave) {
+      const p = (t * duration - item.delay) / crest;
+      if (p < 0 || (p >= 1 && !item.moving)) continue;
+      item.moving = p < 1;
+      const kick = item.moving ? Math.sin(p * Math.PI * 3.45) * (1 - p) ** 2 : 0;
+      shift(item.seat, item.direction * kick * .18, kick * .34);
+      changed = true;
+    }
+    if (changed) for (const [mesh] of V.deskMeshes) mesh.instanceMatrix.needsUpdate = true;
+  }, ease.linear).finally(() => {
+    for (const { seat, moving } of wave) if (moving) shift(seat, 0, 0);
+    for (const [mesh] of V.deskMeshes) mesh.instanceMatrix.needsUpdate = true;
+  });
 }
 
 function syncAllSeats() {
@@ -961,7 +997,7 @@ function layoutWorld() {
   const zMax = (rows - 1) / 2 * SZ + .6;
   const pts = [];
   for (const x of [-xMax, xMax]) for (const z of [PODIUM_Z, zMax]) for (const y of [0, PLATE_Y + .5]) pts.push(v3(x, y, z));
-  const hud = Math.min(110, h * .14);
+  const hud = w <= 1070 ? Math.min(168, h * .29) : Math.min(112, h * .16);
   const top = 1 - 2 * hud / h, bottom = -.96, side = .95;
 
   let shift = 0, dist = 20;
@@ -1034,7 +1070,7 @@ function setupPicking(canvas) {
     targets.push(o.front, o.back);
   }
   const ndc = new THREE.Vector2();
-  bindSeatGestures(canvas, (x, y) => {
+  bindSeatTaps(canvas, (x, y) => {
     if (!document.body.classList.contains("ready") || document.elementFromPoint(x, y) !== canvas) return;
     ndc.set(x / innerWidth * 2 - 1, 1 - y / innerHeight * 2);
     ray.setFromCamera(ndc, V.camera);
@@ -1099,7 +1135,8 @@ function frame(now) {
   // 名札がふわふわ浮く
   for (const key in V.seat) {
     const o = V.seat[key];
-    o.pivot.position.y = o.base.y + Math.sin(t * 1.3 + o.phase) * .03 + (o.jump || 0);
+    o.pivot.position.x = o.base.x + (o.rippleX || 0);
+    o.pivot.position.y = o.base.y + Math.sin(t * 1.3 + o.phase) * .03 + (o.jump || 0) + (o.rippleY || 0);
     if (V.billboard) o.pivot.quaternion.copy(V.camera.quaternion);
   }
 

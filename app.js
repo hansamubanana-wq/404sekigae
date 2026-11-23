@@ -8,7 +8,9 @@ let seats = createInitialSeats();
 let locked = new Set();
 let hidden = new Set();   // 発表待ちの席
 let busy = false;
-let cancelSeatGesture = null;
+let seatMode = null;
+const selectedSeats = new Set();
+let replayScope = null;
 
 function createSeatPositionsColumnFirst() {
   const positions = [];
@@ -122,13 +124,45 @@ function updateStatus() {
 }
 
 function setBusy(state) {
-  if (state) cancelSeatGesture?.();
   busy = state;
   ["shuffleBtn", "saveBtn", "resetBtn", "printBtn"].forEach(id => {
     document.getElementById(id).disabled = state;
   });
   document.body.classList.toggle("busy", state);
   updateStatus();
+  updateSeatTools();
+}
+
+function seatIsLocked(key) {
+  return locked.has(key) || (replayScope !== null && !replayScope.has(key));
+}
+
+function updateSeatTools() {
+  const tools = document.getElementById("seatTools");
+  const count = selectedSeats.size;
+  tools.hidden = busy || !(document.body.classList.contains("ready") || document.body.classList.contains("fallback"));
+  for (const button of tools.querySelectorAll("[data-mode]")) {
+    button.setAttribute("aria-pressed", String(button.dataset.mode === seatMode));
+  }
+  document.getElementById("seatActions").hidden = !seatMode;
+  document.getElementById("clearSeatsBtn").hidden = !count;
+  const run = document.getElementById("runSelectedBtn");
+  run.hidden = seatMode !== "retry";
+  run.disabled = count < 2;
+  run.textContent = count ? `実行（${count}席）` : "実行";
+}
+
+function refreshSeatSelection(...keys) {
+  if (worldReady) keys.forEach(seatLook);
+  renderSheet();
+  updateSeatTools();
+}
+
+function setSeatMode(mode) {
+  const previous = [...selectedSeats];
+  seatMode = mode;
+  selectedSeats.clear();
+  refreshSeatSelection(...previous);
 }
 
 // 印刷用 (3D が使えないときは画面にも出す) の座席表
@@ -143,7 +177,7 @@ function renderSheet() {
         el.className = "empty";
       } else {
         const s = seats[key];
-        el.className = `seat ${s.gender}${locked.has(key) ? " locked" : ""}`;
+        el.className = `seat ${s.gender}${seatIsLocked(key) ? " locked" : ""}${selectedSeats.has(key) ? " selected" : ""}`;
         el.innerHTML = `<span class="no">${s.no}</span><span class="kana">${s.kana}</span><span class="name">${s.name}</span>`;
         el.dataset.seat = key;
       }
@@ -152,78 +186,53 @@ function renderSheet() {
   }
 }
 
-function onSeatHold(key) {
-  if (busy) return;
+function onSeatTap(key) {
+  if (busy || !seatMode) return;
   soundUnlock();
-  sfx(locked.has(key) ? "switch" : "toggle", { vol: .8 });
-  locked.has(key) ? locked.delete(key) : locked.add(key);
-  if (worldReady) { seatLook(key); tapPulse(key); }
-  renderSheet();
+  if (seatMode === "lock") {
+    sfx(locked.has(key) ? "switch" : "toggle", { vol: .8 });
+    locked.has(key) ? locked.delete(key) : locked.add(key);
+    if (worldReady) tapPulse(key);
+    refreshSeatSelection(key);
+    return;
+  }
+  if (seatIsLocked(key)) return;
+  if (selectedSeats.has(key)) {
+    selectedSeats.delete(key);
+  } else if (seatMode === "manual" && selectedSeats.size) {
+    const [first] = selectedSeats;
+    setSeatMode("manual");
+    swapSeats(first, key);
+    return;
+  } else {
+    selectedSeats.add(key);
+  }
+  sfx("toggle", { vol: .48 });
+  refreshSeatSelection(key);
 }
 
-function bindSeatGestures(surface, seatAt) {
+function bindSeatTaps(surface, seatAt) {
   let press = null;
-  const clearPress = () => {
-    const current = press;
-    if (!current) return;
-    press = null;
-    cancelSeatGesture = null;
-    clearTimeout(current.timer);
-    current.preview?.remove();
-    if (surface.hasPointerCapture(current.id)) surface.releasePointerCapture(current.id);
-  };
   surface.addEventListener("pointerdown", e => {
-    if (busy || cancelSeatGesture || !e.isPrimary || e.button !== 0) return;
+    if (busy || !seatMode || !e.isPrimary || e.button !== 0) return;
     const key = seatAt(e.clientX, e.clientY);
-    if (!key) return;
-    const start = { key, id: e.pointerId, x: e.clientX, y: e.clientY, mode: "pending", preview: null };
-    start.timer = setTimeout(() => {
-      start.mode = "hold";
-      onSeatHold(key);
-    }, 600);
-    press = start;
-    cancelSeatGesture = clearPress;
-    surface.setPointerCapture(e.pointerId);
+    if (key) press = { key, mode: seatMode, id: e.pointerId, x: e.clientX, y: e.clientY, at: e.timeStamp };
   });
-  const trackMove = e => {
-    if (press?.id !== e.pointerId || press.mode === "hold") return;
-    if (press.mode === "pending" && Math.hypot(e.clientX - press.x, e.clientY - press.y) >= 8) {
-      clearTimeout(press.timer);
-      press.mode = "drag";
-      if (!locked.has(press.key)) {
-        const student = seats[press.key];
-        press.preview = document.createElement("div");
-        press.preview.className = `dragged-name ${student.gender}`;
-        press.preview.textContent = student.name;
-        press.preview.setAttribute("aria-hidden", "true");
-        document.body.appendChild(press.preview);
-      }
-    }
-    if (press.preview) {
-      press.preview.style.transform = `translate3d(${e.clientX}px, ${e.clientY - 16}px, 0) translate(-50%, -100%)`;
-    }
-  };
-  surface.addEventListener("pointermove", trackMove);
+  const moved = e => Math.hypot(e.clientX - press.x, e.clientY - press.y) >= 10;
+  surface.addEventListener("pointermove", e => {
+    if (press?.id === e.pointerId && moved(e)) press = null;
+  });
   surface.addEventListener("pointerup", e => {
     if (press?.id !== e.pointerId) return;
-    trackMove(e);
     const { key, mode } = press;
-    const target = mode === "drag" ? seatAt(e.clientX, e.clientY) : null;
-    clearPress();
-    if (mode === "pending") onSeatTap(key);
-    else if (target) swapSeats(key, target);
+    const tap = !moved(e) && mode === seatMode && e.timeStamp - press.at < 550;
+    press = null;
+    if (tap) onSeatTap(key);
   });
-  for (const event of ["pointercancel", "lostpointercapture"]) {
-    surface.addEventListener(event, e => { if (press?.id === e.pointerId) clearPress(); });
-  }
+  for (const event of ["pointercancel", "pointerleave"]) surface.addEventListener(event, e => {
+    if (press?.id === e.pointerId) press = null;
+  });
   surface.addEventListener("contextmenu", e => e.preventDefault());
-}
-
-function onSeatTap(key) {
-  if (busy || locked.has(key)) return;
-  const candidates = realSeatPositions.filter(other => other !== key && !locked.has(other));
-  if (!candidates.length) return;
-  swapSeats(key, pick(candidates));
 }
 
 async function swapSeats(key, other) {
@@ -253,10 +262,11 @@ async function swapSeats(key, other) {
 }
 
 /* ---------- 席替え ---------- */
-async function shuffleSeats() {
+async function shuffleSeats(scope = null) {
   if (busy) return;
-  const movable = realSeatPositions.filter(pos => !locked.has(pos));
-  if (movable.length === 0) return;
+  const movable = realSeatPositions.filter(pos => !locked.has(pos) && (!scope || scope.has(pos)));
+  if (movable.length < (scope ? 2 : 1)) return;
+  setSeatMode(null);
 
   const shuffled = shuffleArray(movable.map(pos => seats[pos]));
   movable.forEach((pos, i) => { seats[pos] = shuffled[i]; });
@@ -266,11 +276,13 @@ async function shuffleSeats() {
   sfx("click");
   frontRowPrime(movable);   // 最前列中央の動画を、ボタン操作の中で再生できる状態にしておく
 
+  replayScope = scope;
   setBusy(true);
   try {
     V.fixedView = false;
     bgm("main");
     hidden = new Set(movable);
+    if (scope) realSeatPositions.forEach(seatLook);
     lastIntro = lastFly = null;
     await showStart(movable);
     bgmPreload();
@@ -305,6 +317,7 @@ async function shuffleSeats() {
     bgmStop();
     if (worldReady) { endTension(); letterbox(false); V.camRig = null; V.billboard = false; setPlateDim(1); V.spotPower = 1; }
     hidden.clear();
+    replayScope = null;
     syncAllSeats();
     setBusy(false);
     renderSheet();
@@ -313,7 +326,7 @@ async function shuffleSeats() {
 
 function resetSeats() {
   if (busy) return;
-  cancelSeatGesture?.();
+  setSeatMode(null);
   sfx("down", { vol: .7 });
   seats = createInitialSeats();
   locked.clear();
@@ -330,9 +343,17 @@ if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
 }
 addEventListener("DOMContentLoaded", () => {
   const sheet = document.getElementById("sheet");
-  bindSeatGestures(sheet, (x, y) => {
+  bindSeatTaps(sheet, (x, y) => {
     const seat = document.elementFromPoint(x, y)?.closest("[data-seat]");
     if (seat && sheet.contains(seat)) return seat.dataset.seat;
+  });
+  for (const button of document.querySelectorAll("#seatTools [data-mode]")) {
+    button.addEventListener("click", () => { if (!busy) setSeatMode(button.dataset.mode); });
+  }
+  document.getElementById("clearSeatsBtn").addEventListener("click", () => { if (!busy) setSeatMode(seatMode); });
+  document.getElementById("closeSeatModeBtn").addEventListener("click", () => { if (!busy) setSeatMode(null); });
+  document.getElementById("runSelectedBtn").addEventListener("click", () => {
+    if (seatMode === "retry") shuffleSeats(new Set(selectedSeats));
   });
   renderSheet();
   // 起動時に重い準備を全部済ませる (本番中に止まらないように)。ローディングは長くなってよい
@@ -343,9 +364,11 @@ addEventListener("DOMContentLoaded", () => {
       await Promise.race([soundInit(), sleep(10000)]);   // 効果音の読み込みと変換
       V.renderer.setAnimationLoop(frame);
       document.body.classList.add("ready");
+      updateSeatTools();
     })
     .catch(e => {
       console.error(e);
       document.body.classList.add("fallback");
+      updateSeatTools();
     });
 });
