@@ -35,7 +35,7 @@ const BANNER_SFX = { kickoff: "jingle_start", mode: "jingle_mode", speed: "jingl
 async function banner(text, ms, cls = "") {
   if (text === "折り返し地点！") sfx("jingle_half");
   else if (cls === "count") { sfx("heart", { vol: 1 }); sfx("tick", { vol: .7 }); }
-  else if (cls === "finale") { sfx("fanfare", { vol: .9 }); sfx("applause", { vol: .55, delay: .4 }); }
+  else if (cls === "finale") { /* 全員決定は BGM (finale) だけ。長い効果音は鳴らさない */ }
   else if (BANNER_SFX[cls.split(" ").pop()]) sfx(BANNER_SFX[cls.split(" ").pop()]);
   const el = document.createElement("div");
   el.className = `banner ${cls}`;
