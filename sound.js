@@ -8,7 +8,8 @@
 const SND = { ctx: null, master: null, music: null, list: null, buf: {}, loading: null };
 const BGM_FILES = { main: "media/bgm_main.m4a", tension: "media/bgm_tension.m4a", finale: "media/bgm_finale.m4a" };
 const BGM_FADE = 1.25;
-const BGM_VOLUME = .3;
+const BGM_VOLUME = .36;
+const SFX_VOLUME = .85;     // 効果音全体の音量 (BGM とのバランス)
 const BGM = { files: new Map(), request: null, playing: null };
 
 // iPad / iPhone のマナーモードでも鳴らす (Safari 16.4+)
@@ -66,7 +67,7 @@ function sfx(name, o = {}) {
   src.playbackRate.value = (o.rate || 1) * (o.vary ? 1 + (Math.random() - .5) * o.vary : 1);
   src.loop = !!o.loop;
   const g = ctx.createGain();
-  g.gain.value = o.vol ?? 1;
+  g.gain.value = (o.vol ?? 1) * SFX_VOLUME;
   let node = src.connect(g);
   if (o.pan && ctx.createStereoPanner) {
     const p = ctx.createStereoPanner();
