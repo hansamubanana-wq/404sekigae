@@ -363,6 +363,53 @@ body.letterbox::before, body.letterbox::after { transform: none; }
   object-fit: contain;
   background: #000;
 }
+.fr-panel:not([hidden]) {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+  background: rgba(0, 0, 0, .82);
+  cursor: auto;
+}
+.fr-panel p { margin: 0 0 6px; font-size: clamp(16px, 2vw, 23px); }
+.fr-panel button {
+  min-height: 48px;
+  padding: 10px 24px;
+  color: #fff;
+  background: #252525;
+  border: 1px solid #777;
+  border-radius: 12px;
+  font: inherit;
+  cursor: pointer;
+}
+.fr-panel .fr-retry {
+  min-width: min(320px, 100%);
+  min-height: 68px;
+  color: #161008;
+  background: #fbbf24;
+  border-color: #fbbf24;
+  font-size: clamp(23px, 3.1vw, 37px);
+  font-weight: 900;
+}
+.fr-debug:not([hidden]) {
+  position: fixed;
+  z-index: 61;
+  top: max(8px, env(safe-area-inset-top));
+  right: 8px;
+  max-width: calc(100vw - 16px);
+  padding: 8px;
+  background: #111;
+  color: #fff;
+  font: 12px/1.4 monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
 /* 白紙に書かれたように見せる名前 */
 .fr-name {
   position: fixed;
@@ -481,7 +528,7 @@ body.fallback .sheet-wrap {
 @media print {
   @page { size: landscape; margin: 10mm; }
   html, body { height: auto; overflow: visible; background: #fff !important; color: #111827; }
-  #scene, #frontImpactFlash, .hud, .loading, .bubble, .banner, .caption, .frontrow, .fr-iris, .seat-history { display: none !important; }
+  #scene, #frontImpactFlash, .hud, .loading, .bubble, .banner, .caption, .frontrow, .fr-iris, .fr-debug, .seat-history { display: none !important; }
   body::before, body::after { display: none; }
   .sheet-wrap { display: flex !important; flex-direction: column; position: static !important; }
   .sheet-desk { color: #111827; border-color: #111827; }

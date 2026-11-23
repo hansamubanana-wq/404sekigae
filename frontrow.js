@@ -1,14 +1,13 @@
 "use strict";
 /* =========================================================
    最前列中央の席の特別演出
-   完成動画 media/the_front_row.mp4 (10.54秒 / 1280×720 / 24fps) を流し、
-   9.1秒から机の上の白紙の中央に当選者の名前を重ねて、終了画面まで残す。
+   完成動画 media/the_front_row.mp4 (約26.5秒 / 1280×720 / 24fps) を流し、
+   25.1秒から机の上の白紙の中央に当選者の名前を重ねて、終了画面まで残す。
    流れ:
      前振り (黒帯・照明が落ちて席にライトとカメラが寄る・字幕・丸く暗転)
-     → 動画 (操作 UI なし・スキップなし・最後まで流す)
+     → 動画 (通常は操作なし。失敗時はタップで音付き再生をやり直せる)
      → 締め (終了画面を少し見せて暗転 → 教室に戻って字幕)
      → 既存の結果表示 (名前カードが席へ)
-   ・再生に失敗したとき (読み込みエラー・始まらない) だけは、すぐ既存の結果表示へ進む
    ・発表の順番は、最後の3人の中に入れる
    ========================================================= */
 
@@ -19,11 +18,12 @@ const FRONT_ROW = {
   x: .500, y: .525,           // 白紙の中心 (映像の矩形に対する割合)
   maxW: .36,                  // 名前の最大幅 (映像の幅に対する割合)
   fromLast: 3,                // 発表の順番: 最後の3人の中に入れる (残り3人を見せてから動画)
-  startTimeout: 10000,        // これまでに再生が始まらなければ失敗扱い (ミリ秒)
+  waitTimeout: 25000,         // 再生開始やバッファ待ちが長引いたら、再生ボタンを出す (ミリ秒)
   endHold: 2600,              // 動画が終わったあと、終了画面を見せておく時間 (ミリ秒)
 };
 
 let FR = null;
+const frontRowDebug = new URLSearchParams(location.search).has("debug");
 
 function frontRowDom() {
   if (FR) return FR;
@@ -32,13 +32,41 @@ function frontRowDom() {
   root.hidden = true;
   root.innerHTML = `
     <video class="fr-video" playsinline webkit-playsinline preload="none" disablepictureinpicture disableremoteplayback></video>
-    <div class="fr-name" aria-live="polite"></div>`;
+    <div class="fr-name" aria-live="polite"></div>
+    <div class="fr-panel" hidden>
+      <p class="fr-status" role="status"></p>
+      <button type="button" class="fr-retry" hidden>タップで再生</button>
+      <button type="button" class="fr-skip" hidden>動画をスキップ</button>
+    </div>`;
   const iris = document.createElement("div");
   iris.className = "fr-iris";
   iris.hidden = true;
   document.body.append(root, iris);
-  FR = { root, iris, video: root.querySelector(".fr-video"), name: root.querySelector(".fr-name") };
+  FR = {
+    root, iris, video: root.querySelector(".fr-video"), name: root.querySelector(".fr-name"),
+    panel: root.querySelector(".fr-panel"), status: root.querySelector(".fr-status"),
+    retry: root.querySelector(".fr-retry"), skip: root.querySelector(".fr-skip"), active: false,
+  };
+  if (frontRowDebug) {
+    FR.debug = document.createElement("output");
+    FR.debug.className = "fr-debug";
+    FR.debug.hidden = true;
+    document.body.append(FR.debug);
+  }
   return FR;
+}
+
+function frontRowReport(stage, error, warning = true) {
+  const { video, debug } = frontRowDom();
+  const reason = error?.name || error?.code || error || "";
+  const detail = error?.message || "";
+  const state = `ready=${video.readyState} network=${video.networkState} time=${video.currentTime.toFixed(2)}`;
+  const message = `[最前列動画] ${stage} ${reason} ${detail} (${state})`;
+  if (warning) console.warn(message, video.currentSrc || video.getAttribute("src"));
+  if (debug) {
+    debug.hidden = false;
+    debug.textContent = [...debug.textContent.split("\n").filter(Boolean).slice(-3), message].join("\n");
+  }
 }
 
 // 発表の順番: 最前列中央の席は最後の3人の中に入れる。
@@ -54,24 +82,27 @@ function placeFrontRowLate(order) {
 // 起動時に動画の読み込みを始めておく
 function frontRowPreload() {
   const v = frontRowDom().video;
-  if (!v.getAttribute("src")) v.src = FRONT_ROW.src;
   v.preload = "auto";
-  try { v.load(); } catch {}
+  if (v.getAttribute("src") !== FRONT_ROW.src) v.src = FRONT_ROW.src;
+  return v;
 }
 
 // 席替えスタートのボタンを押した瞬間 (ユーザー操作の中) に呼ぶ。
 // iPad / iPhone では、操作の中で一度 play() しておかないと、あとで音付きで再生できないため
 function frontRowPrime(movable) {
   if (!movable.includes(FRONT_ROW.key)) return;
-  const v = frontRowDom().video;
+  const d = frontRowDom(), v = frontRowPreload();
   try {
-    if (!v.getAttribute("src")) v.src = FRONT_ROW.src;
-    v.preload = "auto";
+    if (v.error) v.load();
     v.muted = false;
-    const p = v.play();
-    v.pause();
-    if (p && p.catch) p.catch(() => {});
-  } catch {}
+    // play() の完了前に pause() すると、操作中の再生要求まで中断される。
+    v.play().then(() => {
+      if (!d.active) v.pause();
+      frontRowReport("事前再生できました", null, false);
+    }, error => frontRowReport("事前再生に失敗", error));
+  } catch (error) {
+    frontRowReport("事前再生に失敗", error);
+  }
 }
 
 // 映像が実際に映っている矩形 (黒帯を除く)
@@ -97,7 +128,7 @@ function frontRowLayoutName() {
   el.style.maxWidth = `${maxW}px`;
 }
 
-// 再生位置から名前の表示を決める (18.5秒未満なら必ず隠す)
+// 再生位置から名前の表示を決める
 function frontRowSync(t) {
   if (!FR) return;
   FR.name.classList.toggle("on", t >= FRONT_ROW.nameAt - .001);
@@ -166,25 +197,73 @@ async function frontRowOutro(key, at) {
   await dolly(0, null, 1000);
 }
 
-/* ---------- 動画 (操作なし・最後まで) ---------- */
+/* ---------- 動画・再生できなかった場合の再試行 ---------- */
 // 戻り値: "done" (最後まで流れた) | "failed"
 function playFrontRow(student) {
-  const d = frontRowDom(), v = d.video;
+  const d = frontRowDom(), v = frontRowPreload();
   return new Promise(resolve => {
-    let finished = false, started = false, startTimer = 0, raf = 0, vfc = 0;
+    let finished = false, waitingForTap = false, triedByTap = false, attempt = 0;
+    let waitTimer = 0, loadingTimer = 0, raf = 0, vfc = 0;
     const on = [];
     const listen = (el, ev, fn) => { el.addEventListener(ev, fn); on.push([el, ev, fn]); };
 
+    const clearWait = () => {
+      clearTimeout(waitTimer);
+      clearTimeout(loadingTimer);
+      waitTimer = loadingTimer = 0;
+    };
     const finish = result => {
       if (finished) return;
       finished = true;
-      clearTimeout(startTimer); cancelAnimationFrame(raf);
+      d.active = false;
+      d.panel.hidden = true;
+      clearWait(); cancelAnimationFrame(raf);
       if (vfc && v.cancelVideoFrameCallback) v.cancelVideoFrameCallback(vfc);
       on.forEach(([el, ev, fn]) => el.removeEventListener(ev, fn));
-      try { v.pause(); } catch {}
+      v.pause();
       resolve(result);
     };
 
+    const showPanel = (message, retry = false) => {
+      d.status.textContent = message;
+      d.retry.hidden = !retry;
+      d.skip.hidden = !retry || !triedByTap;
+      d.panel.hidden = false;
+      d.root.classList.add("on");
+    };
+    const recover = (stage, error) => {
+      if (finished || waitingForTap) return;
+      waitingForTap = true;
+      attempt++;
+      clearWait();
+      frontRowReport(stage, error);
+      v.pause();
+      showPanel("動画を再生できませんでした", true);
+    };
+    const waitForPlayback = () => {
+      if (finished || waitingForTap || waitTimer) return;
+      loadingTimer = setTimeout(() => showPanel("動画を読み込み中…"), 650);
+      waitTimer = setTimeout(() => recover("再生待ち", `${FRONT_ROW.waitTimeout / 1000}秒でタイムアウト`), FRONT_ROW.waitTimeout);
+    };
+    const start = (byTap = false) => {
+      waitingForTap = false;
+      triedByTap ||= byTap;
+      const current = ++attempt;
+      d.panel.hidden = true;
+      waitForPlayback();
+      try {
+        if (byTap && (v.error || (v.readyState < 2 && v.currentTime === 0))) v.load();
+        v.muted = false;
+        // 再試行はタップのハンドラー内で直接呼ぶ。ブラウザの音付き再生許可を使うため。
+        v.play().catch(error => {
+          if (current === attempt) recover("再生要求が拒否", error);
+        });
+      } catch (error) {
+        recover("再生要求が失敗", error);
+      }
+    };
+
+    d.active = true;
     d.name.textContent = student.name;
     d.name.classList.remove("on");
     d.root.classList.remove("on", "out");
@@ -202,22 +281,32 @@ function playFrontRow(student) {
     }
     ["seeking", "seeked"].forEach(ev => listen(v, ev, () => frontRowSync(v.currentTime)));
 
-    listen(v, "error", () => finish("failed"));
-    startTimer = setTimeout(() => { if (!started) finish("failed"); }, FRONT_ROW.startTimeout);
-    // 映像が出始めたら、黒から浮かび上がらせる
-    listen(v, "playing", () => { started = true; d.root.classList.add("on"); });
+    listen(d.retry, "click", () => start(true));
+    listen(d.skip, "click", () => {
+      frontRowReport("再試行後にスキップを選択", null, false);
+      finish("failed");
+    });
+    listen(v, "error", () => recover("動画の読み込み・デコードエラー", v.error));
+    listen(v, "waiting", waitForPlayback);
+    listen(v, "pause", () => {
+      if (v.paused && !v.ended) recover("再生が一時停止しました");
+    });
+    listen(v, "playing", () => {
+      if (waitingForTap || v.paused) return;
+      clearWait();
+      d.panel.hidden = true;
+      d.root.classList.add("on");
+    });
     listen(v, "loadedmetadata", frontRowLayoutName);
     listen(window, "resize", frontRowLayoutName);
     listen(window, "orientationchange", () => setTimeout(frontRowLayoutName, 300));
     listen(v, "ended", () => { frontRowSync(v.duration || 20); finish("done"); });
 
     try {
-      if (!v.getAttribute("src")) v.src = FRONT_ROW.src;
       if (v.readyState > 0) v.currentTime = 0;
-    } catch {}
+    } catch (error) { frontRowReport("再生位置を戻せませんでした", error); }
     frontRowSync(0);
-    v.muted = false;
-    v.play().catch(() => finish("failed"));
+    start();
   });
 }
 
@@ -262,14 +351,14 @@ async function announceFrontRow(key, others = []) {
   const at = await frontRowIntro(key);
   let result = "failed";
   bgmDuck(true);
-  try { result = await playFrontRow(s); } catch { result = "failed"; }
+  try { result = await playFrontRow(s); } catch (error) { frontRowReport("動画の準備に失敗", error); }
   finally { bgmDuck(false); }
   if (result === "done") {
     await sleep(FRONT_ROW.endHold);   // 名前の出た終了画面を少し見せる
     await frontRowClose(1200);        // ゆっくり暗転
     await frontRowOutro(key, at);
   } else {
-    // 再生できなかったときは、すぐ既存の結果表示へ
+    // 再試行後にスキップを選んだ場合は、既存の結果表示へ
     await frontRowClose(0);
     V.renderHold = false;
     setPlateDim(1);

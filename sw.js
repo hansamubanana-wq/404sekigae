@@ -1,7 +1,7 @@
 // オフラインでも開けるようにするキャッシュ
 // ・このサイトのファイル: ネットを優先 (更新がすぐ反映される)。つながらないときはキャッシュ
 // ・three.js やフォントなど外部のファイル: キャッシュを優先
-const CACHE = "sekigae-v6";
+const CACHE = "sekigae-v7";
 // BGM は最初の操作以降に取得するため、事前キャッシュには含めない。
 const CORE = [
   "./", "index.html", "style.css", "students.js", "sound.js", "app.js", "world.js", "models.js", "extras.js", "frontrow.js", "pair.js", "show.js",
