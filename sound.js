@@ -5,13 +5,11 @@
    sfx("名前") で鳴らす。同じ名前に複数の音があるときはランダムに選ぶ
    ========================================================= */
 
-const SND = { ctx: null, master: null, music: null, list: null, buf: {}, on: true, loading: null };
+const SND = { ctx: null, master: null, music: null, list: null, buf: {}, loading: null };
 const BGM_FILES = { main: "media/bgm_main.m4a", tension: "media/bgm_tension.m4a", finale: "media/bgm_finale.m4a" };
 const BGM_FADE = 1.25;
 const BGM_VOLUME = .3;
 const BGM = { files: new Map(), request: null, playing: null };
-
-try { SND.on = localStorage.getItem("404sound") !== "off"; } catch {}
 
 // iPad / iPhone のマナーモードでも鳴らす (Safari 16.4+)
 try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch {}
@@ -23,7 +21,7 @@ function soundInit() {
     if (!AC) return;
     SND.ctx = new AC();
     SND.master = SND.ctx.createGain();
-    SND.master.gain.value = SND.on ? .9 : 0;
+    SND.master.gain.value = .9;
     SND.music = SND.ctx.createGain();
     SND.music.connect(SND.master);
     // 大きな音が重なっても割れないように軽くコンプレッサーをかける
@@ -57,7 +55,7 @@ function soundLoad() {
 
 // name: 音の名前 / vol: 音量 / rate: 速さ(音の高さ) / delay: 秒 / pan: -1〜1
 function sfx(name, o = {}) {
-  if (!SND.ctx || !SND.list || !SND.on) return null;
+  if (!SND.ctx || !SND.list) return null;
   const files = SND.list[name];
   if (!files) return null;
   const buf = SND.buf[files[Math.floor(Math.random() * files.length)]];
@@ -171,20 +169,5 @@ function bgmDuck(ducked) {
 // 画面の左右位置 (ステージ座標の x) から左右の定位を決める
 function panOf(local) { return V && V.visW ? Math.max(-.8, Math.min(.8, local.x / (V.visW / 2))) : 0; }
 
-function setSoundOn(on) {
-  SND.on = on;
-  try { localStorage.setItem("404sound", on ? "on" : "off"); } catch {}
-  if (SND.master) SND.master.gain.setTargetAtTime(on ? .9 : 0, SND.ctx.currentTime, .05);
-  const b = document.getElementById("soundBtn");
-  if (b) b.classList.toggle("muted", !on);
-}
-
-function toggleSound() {
-  soundUnlock();
-  setSoundOn(!SND.on);
-  if (SND.on) sfx("toggle", { vol: .6 });
-}
-
 // 最初のタップで音を有効にする (ブラウザの決まり)
 ["pointerdown", "touchend", "keydown"].forEach(ev => addEventListener(ev, soundUnlock, { passive: true }));
-addEventListener("DOMContentLoaded", () => setSoundOn(SND.on));

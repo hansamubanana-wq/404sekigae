@@ -112,11 +112,6 @@ button:disabled { opacity: 0; pointer-events: none; }
   stroke-linejoin: round;
   transition: opacity .2s, transform .2s;
 }
-#soundBtn .slash { display: none; }
-#soundBtn.muted .slash { display: inline; }
-#soundBtn.muted .wave { display: none; }
-#soundBtn.muted { opacity: .6; }
-#soundBtn:disabled { opacity: 1; pointer-events: auto; }
 .icon .check { position: absolute; opacity: 0; transform: scale(.5); color: #4ade80; }
 .icon.done svg:first-child { opacity: 0; }
 .icon.done .check { opacity: 1; transform: scale(1); }
@@ -373,6 +368,13 @@ body.fallback .sheet-wrap {
 }
 .sheet .seat.girl { --c: var(--girl); }
 .sheet .seat.locked { box-shadow: 0 0 0 3px var(--gold); }
+.sheet .seat.locked::before,
+.sheet .seat.locked::after {
+  content: "";
+  position: absolute;
+}
+.sheet .seat.locked::before { top: 4px; right: 6px; width: 7px; height: 7px; border: 2px solid var(--gold); border-radius: 6px; }
+.sheet .seat.locked::after { top: 9px; right: 4px; width: 11px; height: 8px; border-radius: 2px; background: var(--gold); }
 .sheet .no { position: absolute; left: 7px; top: 4px; font-size: 11px; font-weight: 800; opacity: .7; }
 .sheet .kana { font-size: 10px; opacity: .75; white-space: nowrap; }
 .sheet .name { font-size: 15px; font-weight: 900; white-space: nowrap; }

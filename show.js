@@ -854,10 +854,45 @@ async function showStart(movable) {
   await veil(false, 300);
 }
 
+async function orbitClassroom() {
+  const camera = V.camera;
+  const startPos = camera.position.clone(), startQuat = camera.quaternion.clone();
+  let progress = 0;
+  V.billboard = true;
+  V.shakeAmt = 0;
+  V.camRig = () => {
+    const t = progress;
+    const angle = Math.PI * (1 - Math.cos(Math.PI * t));
+    const wide = Math.sin(Math.PI * t);
+    const radius = (V.homePos.z - V.lookTarget.z) * (1 + .2 * wide);
+    camera.position.set(
+      V.lookTarget.x + Math.sin(angle) * radius,
+      V.homePos.y + 1.8 * wide,
+      V.lookTarget.z + Math.cos(angle) * radius,
+    );
+    const enter = ease.inOut(clamp01(t / .12));
+    camera.position.lerpVectors(startPos, camera.position, enter);
+    camera.lookAt(V.lookTarget);
+    const exit = ease.inOut(clamp01((t - .88) / .12));
+    camera.quaternion.slerp(startQuat, 1 - enter).slerp(V.homeQuat, exit);
+  };
+  try {
+    await tween(12000, t => { progress = t; }, ease.linear);
+    camera.position.copy(V.homePos);
+    camera.quaternion.copy(V.homeQuat);
+    V.fixedView = true;
+  } finally {
+    V.camRig = null;
+    V.camOffset.set(0, 0, 0);
+    V.billboard = false;
+    for (const key of realSeatPositions) V.seat[key].pivot.quaternion.copy(V.homeQuat);
+  }
+}
+
 async function showFinale() {
   endTension();
   veil(false, 300);
-  dolly(-2.5, null, 1600);
+  const orbit = orbitClassroom();
   const keys = [...realSeatPositions].sort((a, b) => seatXZ(a).z - seatXZ(b).z);
   keys.forEach((key, i) => sleep(i * 45).then(() => {
     const o = V.seat[key];
@@ -874,9 +909,8 @@ async function showFinale() {
     firework(pick(palettes));
     await sleep(rand(160, 330));
   }
-  await b;
+  await Promise.all([b, orbit]);
   V.spotSpeed = 1;
-  await dolly(0, null, 1400);
 }
 
 async function firework(pal) {

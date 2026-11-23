@@ -143,19 +143,84 @@ function renderSheet() {
         const s = seats[key];
         el.className = `seat ${s.gender}${locked.has(key) ? " locked" : ""}`;
         el.innerHTML = `<span class="no">${s.no}</span><span class="kana">${s.kana}</span><span class="name">${s.name}</span>`;
-        el.onclick = () => onSeatTap(key);
+        el.dataset.seat = key;
       }
       grid.appendChild(el);
     }
   }
 }
 
-function onSeatTap(key) {
+function onSeatHold(key) {
   if (busy) return;
+  soundUnlock();
   sfx(locked.has(key) ? "switch" : "toggle", { vol: .8 });
   locked.has(key) ? locked.delete(key) : locked.add(key);
   if (worldReady) { seatLook(key); tapPulse(key); }
   renderSheet();
+}
+
+function bindSeatGestures(surface, seatAt) {
+  let press = null;
+  const clearPress = () => {
+    if (press) clearTimeout(press.timer);
+    press = null;
+  };
+  surface.addEventListener("pointerdown", e => {
+    if (busy || press || !e.isPrimary || e.button !== 0) return;
+    const key = seatAt(e);
+    if (!key) return;
+    const start = { key, id: e.pointerId, x: e.clientX, y: e.clientY, held: false };
+    start.timer = setTimeout(() => {
+      start.held = true;
+      onSeatHold(key);
+    }, 600);
+    press = start;
+    surface.setPointerCapture(e.pointerId);
+  });
+  const moved = e => Math.hypot(e.clientX - press.x, e.clientY - press.y) > 12;
+  surface.addEventListener("pointermove", e => {
+    if (press?.id === e.pointerId && moved(e)) clearPress();
+  });
+  surface.addEventListener("pointerup", e => {
+    if (press?.id !== e.pointerId) return;
+    const { key, held } = press;
+    const tapped = !held && !moved(e);
+    clearPress();
+    if (tapped) onSeatTap(key);
+  });
+  for (const event of ["pointercancel", "lostpointercapture"]) {
+    surface.addEventListener(event, e => { if (press?.id === e.pointerId) clearPress(); });
+  }
+  surface.addEventListener("contextmenu", e => e.preventDefault());
+}
+
+async function onSeatTap(key) {
+  if (busy || locked.has(key)) return;
+  const candidates = realSeatPositions.filter(other => other !== key && !locked.has(other));
+  if (!candidates.length) return;
+  const other = pick(candidates);
+  const moves = [{ s: seats[key], from: key, key: other }, { s: seats[other], from: other, key }];
+  const assign = () => { for (const move of moves) seats[move.key] = move.s; };
+
+  soundUnlock();
+  if (!worldReady) {
+    assign();
+    sfx("switch");
+    renderSheet();
+    return;
+  }
+  setBusy(true);
+  try {
+    await animateSeatReplay(moves, assign);
+  } catch (error) {
+    console.error(error);
+  } finally {
+    assign();
+    hidden.clear();
+    syncAllSeats();
+    setBusy(false);
+    renderSheet();
+  }
 }
 
 /* ---------- 席替え ---------- */
@@ -174,6 +239,7 @@ async function shuffleSeats() {
 
   setBusy(true);
   try {
+    V.fixedView = false;
     bgm("main");
     hidden = new Set(movable);
     lastIntro = lastFly = null;
@@ -233,6 +299,7 @@ if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
   addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
 }
 addEventListener("DOMContentLoaded", () => {
+  bindSeatGestures(document.getElementById("sheet"), e => e.target.closest("[data-seat]")?.dataset.seat);
   renderSheet();
   // 起動時に重い準備を全部済ませる (本番中に止まらないように)。ローディングは長くなってよい
   initWorld()

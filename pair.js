@@ -93,6 +93,141 @@ function popIn(g, k, ms = 450) {
 function revealBurst(g, s) {
   burst(g.position.clone().add(v3(0, 0, .3)), [hdr(HEX[s.gender], 3), hdr(HEX.gold, 3), hdr(0xffffff, 2.5)], 120, 4);
 }
+
+async function animateSeatReplay(moves, assign) {
+  const flights = moves.map(({ s, from, key }) => {
+    const start = plateLocal(from), end = plateLocal(key);
+    const control = start.clone().lerp(end, .5);
+    const dx = end.x - start.x, dz = end.z - start.z;
+    const bend = .9 / (Math.hypot(dx, dz) || 1);
+    control.x += dz * bend;
+    control.y += 2.2;
+    control.z -= dx * bend;
+    const card = pairCard(s, "", 1);
+    const tint = hdr(HEX[s.gender], 1.8);
+    card.position.copy(start);
+    card.visible = false;
+    return { card, key, curve: new THREE.QuadraticBezierCurve3(start, control, end), tint, spark: -1 };
+  });
+  try {
+    for (const { from } of moves) {
+      hidden.add(from);
+      seatLook(from);
+    }
+    sfx("switch");
+    await Promise.all(moves.map(({ from }) => flipPlate(from, true, 270)));
+    for (const { card } of flights) card.visible = true;
+    await tween(950, t => {
+      for (const flight of flights) {
+        const { card, curve } = flight;
+        curve.getPoint(t, card.position);
+        card.rotation.z = Math.sin(Math.PI * t) * .22;
+        sparkOnRoute(flight, t);
+      }
+    }, ease.inOut);
+    assign();
+    for (const { card, key, tint } of flights) {
+      hidden.delete(key);
+      seatLook(key);
+      burst(card.position, tint, 26, 1.6, { life: .6, size: .045 });
+      dropCard(card);
+    }
+    sfx("land", { vol: .7 });
+    await Promise.all(flights.map(({ key }) => flipPlate(key, false, 320)));
+  } finally {
+    flights.forEach(({ card }) => dropCard(card));
+  }
+}
+
+// 新しい演出は少数の小道具と既存の火花バッファを共有する。
+function showRingRig() {
+  const group = new THREE.Group();
+  const geometry = new THREE.TorusGeometry(1, .045, 8, 48);
+  for (const color of [0x38bdf8, 0xf0abfc, 0xfbbf24]) {
+    const material = new THREE.MeshBasicMaterial({
+      color: hdr(color, 2.2), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    });
+    group.add(new THREE.Mesh(geometry, material));
+  }
+  return group;
+}
+
+function showCrystalRig() {
+  const group = new THREE.Group();
+  const geometry = new THREE.OctahedronGeometry(.58);
+  const edges = new THREE.EdgesGeometry(geometry);
+  for (const color of [0x38bdf8, 0xe879f9, 0xfbbf24]) {
+    const crystal = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
+      color, emissive: color, emissiveIntensity: .34, roughness: .24, metalness: .45,
+    }));
+    crystal.add(new THREE.LineSegments(edges, new THREE.LineBasicMaterial({
+      color: hdr(color, 2.5), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    })));
+    group.add(crystal);
+  }
+  group.userData.reset = () => group.children.forEach(crystal => { crystal.visible = true; });
+  return group;
+}
+
+function showConstellation() {
+  const shape = new THREE.IcosahedronGeometry(1);
+  const lines = new THREE.LineSegments(new THREE.EdgesGeometry(shape), new THREE.LineBasicMaterial({
+    color: hdr(0x93c5fd, 2.6), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  }));
+  const stars = new THREE.Points(shape, new THREE.PointsMaterial({
+    color: hdr(0xffe5a3, 2.5), map: V.tex.glow, size: .16, transparent: true,
+    depthWrite: false, blending: THREE.AdditiveBlending,
+  }));
+  const group = new THREE.Group();
+  group.add(lines, stars);
+  return group;
+}
+
+const ROUTE_POINTS = 25;
+function showLightRails() {
+  const group = new THREE.Group();
+  for (let i = 0; i < 2; i++) {
+    const geometry = new THREE.BufferGeometry();
+    const positions = new THREE.BufferAttribute(new Float32Array(ROUTE_POINTS * 3), 3).setUsage(THREE.DynamicDrawUsage);
+    geometry.setAttribute("position", positions);
+    const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({
+      color: hdr(0xffffff, 2), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    }));
+    line.frustumCulled = false;
+    group.add(line);
+  }
+  group.userData.reset = () => group.children.forEach(line => { line.visible = true; });
+  return group;
+}
+
+function sparkOnRoute(flight, t) {
+  const step = Math.floor(t * 16);
+  if (step === flight.spark) return;
+  flight.spark = step;
+  burst(flight.card.position, flight.tint, 3, .8, { life: .65, size: .06, grav: -.2 });
+}
+
+async function travelShowRoute(list, cards, duration, move) {
+  const flights = cards.map((card, i) => ({
+    card, from: card.position.clone(), to: plateLocal(list[i].key), size: card.scale.x,
+    tint: hdr(HEX[list[i].s.gender], 2.2), spark: -1,
+  }));
+  sfx("whoosh", { vol: .75 });
+  await tween(duration, t => {
+    flights.forEach((flight, i) => {
+      move(flight, t, i);
+      flight.card.scale.setScalar(lerp(flight.size, 1, t));
+      sparkOnRoute(flight, t);
+    });
+  }, ease.inOut);
+  await Promise.all(list.map(({ s, key }, i) => landCard(cards[i], s, key)));
+}
+
+function showParallax(direction) {
+  const offset = v3(direction * .72, .42, .15).applyQuaternion(V.homeQuat);
+  return camGo(camPoseLook(V.homePos.clone().add(offset), V.stage.position), 850);
+}
+
 // 発表中の席以外で、まだ決まっていない席
 const pendingExcept = list => [...hidden].filter(k => !list.some(x => x.key === k));
 
@@ -101,6 +236,102 @@ const pendingExcept = list => [...hidden].filter(k => !list.some(x => x.key === 
    (呼ばれた時点でカードは見えない状態。終わったら定位置・表向き・大きさ k)
    ========================================================= */
 const INTRO2 = {
+  // ジャイロリング: 傾いた輪が回り、奥から名前が現れる。
+  async gyroscope(list, cards, k) {
+    const rig = stageActor(showRingRig);
+    const turn = showParallax(-1);
+    sfx("phase");
+    cards.forEach(g => { g.visible = true; });
+    try {
+      await tween(1650, t => {
+        rig.position.z = lerp(-3, -.6, t);
+        rig.children.forEach((ring, i) => {
+          ring.position.set(0, 0, 0);
+          ring.rotation.set(t * 4.5 + i, t * 3 + i * 1.5, t * 2.4);
+          ring.scale.setScalar((.8 + i * .24) * lerp(.55, 2.6, t));
+          ring.material.opacity = Math.sin(Math.PI * t) * .75;
+        });
+        cards.forEach((g, i) => {
+          g.position.z = lerp(-5, 0, t);
+          g.rotation.y = (1 - t) * (i ? 1.6 : -1.6);
+          g.scale.setScalar(k * lerp(.25, 1, t));
+        });
+      }, ease.inOut);
+      await turn;
+    } finally {
+      rig.userData.remove();
+      await camHome(550);
+    }
+  },
+
+  // 水晶のせり上がり: 回転する水晶と一緒に、下から名前がせり上がる。
+  async crystalRise(list, cards, k) {
+    const rig = stageActor(showCrystalRig);
+    sfx("magic");
+    cards.forEach(g => { g.visible = true; });
+    try {
+      await tween(1550, t => {
+        rig.children.forEach((crystal, i) => {
+          crystal.position.set((i - 1) * Math.min(V.visW * .2, 3.2), lerp(-V.visH * .43, -1.6 - i * .2, t), -1.7 - i * .3);
+          crystal.rotation.set(t * 3 + i, t * 5, t * 2);
+          crystal.scale.setScalar(.02 + Math.sin(Math.PI * t) * 1.15);
+        });
+        cards.forEach((g, i) => {
+          g.position.y = lerp(-V.visH * .45, 0, t);
+          g.position.z = -1.4 * (1 - t);
+          g.rotation.z = Math.sin(Math.PI * t) * (i ? -.35 : .35);
+          g.scale.setScalar(k * lerp(.4, 1, t));
+        });
+      }, ease.out);
+    } finally { rig.userData.remove(); }
+  },
+
+  // 三重ゲート: 遠くの輪を順にくぐって手前に飛び出す。
+  async depthGates(list, cards, k) {
+    const rig = stageActor(showRingRig);
+    sfx("beam");
+    cards.forEach(g => { g.visible = true; });
+    try {
+      await tween(1450, t => {
+        rig.children.forEach((ring, i) => {
+          ring.position.set(0, 0, -7 + i * 2.5);
+          ring.rotation.set(.16 * t, .18 * i, t);
+          ring.scale.setScalar((2.9 + i * .3) * Math.min(1, V.visW / 8));
+          ring.material.opacity = Math.max(0, 1 - Math.abs(-7 + i * 2.5 + 9 * (1 - t)) * .28) * (1 - t);
+        });
+        cards.forEach(g => {
+          g.position.z = -9 * (1 - t);
+          g.scale.setScalar(k * lerp(.5, 1, t));
+        });
+      }, ease.inOut);
+    } finally { rig.userData.remove(); }
+  },
+
+  // 星座の展開: 立体の星座が展開し、頂点から名前が前に浮かぶ。
+  async starMap(list, cards, k) {
+    const rig = stageActor(showConstellation);
+    const turn = showParallax(1);
+    const xs = cards.map(g => g.position.x);
+    sfx("chime");
+    cards.forEach(g => { g.visible = true; });
+    try {
+      await tween(1650, t => {
+        rig.position.z = lerp(-4, -1, t);
+        rig.rotation.set(t * 2.4, t * 4.2, t * .7);
+        rig.scale.setScalar(1 + Math.sin(t * Math.PI) * 2.2);
+        rig.children.forEach(m => { m.material.opacity = Math.sin(t * Math.PI); });
+        cards.forEach((g, i) => {
+          g.position.set(xs[i] * lerp(.25, 1, t), Math.sin(t * Math.PI) * (i ? .8 : -.8), -3 * (1 - t));
+          g.scale.setScalar(k * lerp(.16, 1, t));
+        });
+      }, ease.inOut);
+      await turn;
+    } finally {
+      rig.userData.remove();
+      await camHome(550);
+    }
+  },
+
   // ポン: 回りながら飛び出す
   async pop(list, cards, k) {
     for (let i = 0; i < cards.length; i++) {
@@ -324,6 +555,97 @@ const INTRO2 = {
    移動: それぞれの席へ (最後に全員着地させる)
    ========================================================= */
 const TRAVEL2 = {
+  // 光のレール: それぞれの着地点へつながる曲線の上を滑る。
+  async lightRails(list, cards) {
+    const rig = stageActor(showLightRails);
+    const sample = v3();
+    const paths = list.map(({ s, key }, i) => {
+      const start = cards[i].position.clone(), end = plateLocal(key);
+      const a = start.clone().add(v3(i ? 1.3 : -1.3, 2.3, -1));
+      const b = end.clone().add(v3(i ? -1.5 : 1.5, 1.4, 2));
+      const curve = new THREE.CubicBezierCurve3(start, a, b, end);
+      const line = rig.children[i], attr = line.geometry.attributes.position;
+      line.material.color.setHex(HEX[s.gender]).multiplyScalar(3);
+      for (let j = 0; j < ROUTE_POINTS; j++) {
+        curve.getPoint(j / (ROUTE_POINTS - 1), sample);
+        attr.setXYZ(j, sample.x, sample.y, sample.z);
+      }
+      attr.needsUpdate = true;
+      return curve;
+    });
+    if (cards.length < 2) rig.children[1].visible = false;
+    try {
+      await travelShowRoute(list, cards, 1750, ({ card }, t, i) => {
+        paths[i].getPoint(t, card.position);
+        rig.children[i].material.opacity = .78 * (1 - t);
+        card.rotation.z = Math.sin(Math.PI * t) * (i ? -.3 : .3);
+      });
+    } finally { rig.userData.remove(); }
+  },
+
+  // リング・スラローム: 斜めに並ぶ輪を縫ってから左右の席へ別れる。
+  async ringSlalom(list, cards) {
+    const rig = stageActor(showRingRig);
+    const turn = showParallax(1);
+    const centers = [v3(.8, .7, -.9), v3(-1.1, 1, -2.6), v3(.65, .6, -4.2)];
+    const paths = list.map(({ key }, i) => new THREE.CatmullRomCurve3([
+      cards[i].position.clone(),
+      ...centers.map(p => p.clone().add(v3(i ? .28 : -.28, 0, 0))),
+      plateLocal(key),
+    ]));
+    rig.children.forEach((ring, i) => {
+      ring.position.copy(centers[i]);
+      ring.rotation.set(.15 * i, i % 2 ? -.45 : .4, 0);
+      ring.scale.setScalar(1.65);
+      ring.material.opacity = .7;
+    });
+    try {
+      await travelShowRoute(list, cards, 2100, ({ card }, t, i) => {
+        paths[i].getPoint(t, card.position);
+        rig.children.forEach(ring => { ring.material.opacity = .7 * (1 - t); });
+        card.rotation.y = Math.sin(t * Math.PI * 3) * .5;
+      });
+      await turn;
+    } finally {
+      rig.userData.remove();
+      await camHome(550);
+    }
+  },
+
+  // 二重らせん: 互いの周りを回ってから、それぞれ着地する。
+  async doubleHelix(list, cards) {
+    await travelShowRoute(list, cards, 1650, ({ card, from, to }, t, i) => {
+      const angle = t * Math.PI * 4 + i * Math.PI;
+      const envelope = Math.sin(t * Math.PI);
+      card.position.lerpVectors(from, to, t);
+      card.position.x += Math.cos(angle) * envelope * 1.25;
+      card.position.y += (1.8 + Math.sin(angle) * .85) * envelope;
+      card.position.z += Math.sin(angle) * envelope * 1.15;
+      card.rotation.z = Math.cos(angle) * envelope * .6;
+    });
+  },
+
+  // 天井クレーン: 水晶がカードを吸い上げ、席の真上から下ろす。
+  async ceilingCrane(list, cards) {
+    const rig = stageActor(showCrystalRig);
+    const lift = Math.min(2.8, V.visH * .23);
+    rig.children.forEach((crystal, i) => { crystal.visible = i < cards.length; });
+    sfx("beam", { vol: .5 });
+    try {
+      await travelShowRoute(list, cards, 2100, ({ card, from, to }, t, i) => {
+        const across = clamp01((t - .28) / .46);
+        const up = Math.min(1, t / .28, (1 - t) / .26);
+        card.position.lerpVectors(from, to, ease.inOut(across));
+        card.position.y += lift * ease.inOut(up);
+        const crystal = rig.children[i];
+        crystal.position.copy(card.position);
+        crystal.position.y += .85;
+        crystal.rotation.set(t * 3, t * 5, .2);
+        crystal.scale.setScalar(.01 + .9 * Math.sin(Math.PI * t));
+      });
+    } finally { rig.userData.remove(); }
+  },
+
   // 弧: それぞれ弧を描いて飛んでいく
   async arc(list, cards) {
     dolly(.12, list[0].key, 900);
@@ -701,6 +1023,9 @@ async function announcePair(list, force = {}) {
   try {
     veil(true, 400);
     await INTRO2[intro](list, cards, k);
+    for (let i = 0; i < cards.length; i++) {
+      burst(cards[i].position, hdr(HEX[list[i].s.gender], 1.8), 18, 1.05, { life: .8, size: .045, grav: -.2 });
+    }
     await sleep(force.hold ?? 1200);         // 名前を大きく見せておく
     veil(false, 500);
     await TRAVEL2[travel](list, cards);
@@ -743,6 +1068,7 @@ async function warmUpShaders() {
   wind.userData.progress(.5);
   const actors = [
     wind, ufo.g, stageActor(buildRocket), stageActor(buildClock), stageActor(buildZs),
+    stageActor(showRingRig), stageActor(showCrystalRig), stageActor(showConstellation), stageActor(showLightRails),
     ...[0xf2a541, 0x9aa3ad, 0x3a3a3a, 0xf6efe4].map(fur => stageActor(buildCat, fur)),
   ];
   const glass = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), new THREE.ShaderMaterial({

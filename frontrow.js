@@ -216,13 +216,8 @@ function playFrontRow(student) {
       if (v.readyState > 0) v.currentTime = 0;
     } catch {}
     frontRowSync(0);
-    v.muted = typeof SND === "object" && !SND.on;
-    v.play().catch(err => {
-      if (finished) return;
-      // 音付きの自動再生が許されないブラウザでは、消音で流す
-      if (err && err.name === "NotAllowedError" && !v.muted) { v.muted = true; v.play().catch(() => finish("failed")); }
-      else finish("failed");
-    });
+    v.muted = false;
+    v.play().catch(() => finish("failed"));
   });
 }
 
