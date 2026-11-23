@@ -132,13 +132,45 @@ function buildCat(color) {
   return g;
 }
 
-// 後ろの列より手前の通路を往復する。カードだけが名札より高い所を通って席へ降りる。
+const CAT_ENTRY = 4.30;
+const CAT_INNER = 1.45;
+const CAT_AISLE = (rows - 1) / 2 * SZ + 1.13;
+
+// 通路側のカメラに切り替え、方向転換で伸びるしっぽまで画角に入れる。
+async function withCatView(sides, deliver) {
+  const paired = sides.length > 1;
+  const center = paired ? 0 : sides[0] * (CAT_ENTRY + CAT_INNER) / 2;
+  const halfRun = paired ? CAT_ENTRY : (CAT_ENTRY - CAT_INNER) / 2;
+  const aim = v3(center, .55, CAT_AISLE + .25);
+  const pose = () => {
+    const { aspect, fov } = V.camera;
+    const halfFov = Math.tan(THREE.MathUtils.degToRad(fov / 2));
+    const distance = Math.max(4.9, (halfRun + 1.24) / (halfFov * aspect * .86) + .76);
+    return camPoseLook(v3(center, aim.y + .34 * distance, aim.z + .94 * distance), aim);
+  };
+  await camGo(pose(), 420);
+  const resize = () => {
+    const next = pose();
+    CAM.pos.copy(next.pos);
+    CAM.quat.copy(next.quat);
+  };
+  addEventListener("resize", resize);
+  resize();
+  try {
+    await deliver();
+  } finally {
+    removeEventListener("resize", resize);
+    await camHome(460);
+  }
+}
+
+// 猫は後ろの列の外の通路を使い、カードだけが名札の上を通る。
 async function catDelivery(card, key, side, coat) {
   const cat = stageActor(buildCat, coat);
   V.scene.add(cat);
   cat.scale.setScalar(1.15);
-  const aisle = (rows - 1) / 2 * SZ + 1.13;
-  const edge = (cols - 1) / 2 * SX + 1.4;
+  const aisle = CAT_AISLE;
+  const edge = CAT_ENTRY;
   const inward = side < 0 ? 0 : Math.PI;
   cat.position.set(side * edge, 0, aisle);
   cat.rotation.y = inward;
@@ -150,31 +182,48 @@ async function catDelivery(card, key, side, coat) {
     for (let i = 0; i < ms / 180; i++) sfx("step", { vol: .36, delay: i * .18 / TIME_SCALE, rate: 1.55, vary: .2 });
   };
   const mouthAt = point => V.stage.worldToLocal(mouth.getWorldPosition(point));
-  const walk = (x, ms, carry = false) => {
+  let carrying = false;
+  const follow = addFrameHook((dt, t) => {
+    if (!carrying) return;
+    card.position.copy(mouthAt(carryAt));
+    card.rotation.z = cat.userData.run ? .07 * Math.sin(t * 20) : 0;
+  });
+  const walk = (x, ms) => {
     const start = cat.position.x;
     cat.userData.run = true;
     feet(ms);
+    return tween(ms, t => { cat.position.x = lerp(start, x, t); })
+      .then(() => { cat.userData.run = false; });
+  };
+  const turn = (angle, ms) => {
+    const from = cat.rotation.y;
     return tween(ms, t => {
-      cat.position.x = lerp(start, x, t);
-      if (carry) {
-        card.position.copy(mouthAt(carryAt));
-        card.rotation.z = .08 * Math.sin(t * 18);
-      }
-    }).then(() => { cat.userData.run = false; });
+      cat.rotation.y = lerp(from, angle, t);
+      // 横向きになるときは、しっぽの長さも含めて机から離す。
+      cat.position.z = aisle + .66 * Math.sin(Math.PI * t);
+    });
   };
   try {
     cat.position.x = side * 2.45;
     mouthAt(pickup);
     cat.position.x = side * edge;
     await Promise.all([
-      walk(side * 2.45, 1000),
-      tween(1000, t => {
+      walk(side * 2.45, 740),
+      tween(740, t => {
         card.position.lerpVectors(cardStart, pickup, t);
         card.scale.setScalar(lerp(scale, carryScale, t));
       }),
     ]);
+    carrying = true;
     bubble("ニャッ", V.stage.worldToLocal(v3(cat.position.x, 1.45, aisle)), 700);
-    await walk(side * 1.45, 600, true);
+    await walk(side * 1.77, 280);
+    await sleep(170);
+    await turn(inward + Math.PI, 230);
+    await walk(side * 2.87, 360);
+    await sleep(140);
+    await turn(inward, 240);
+    await walk(side * CAT_INNER, 410);
+    carrying = false;
 
     const { x, z } = seatXZ(key);
     const target = plateLocal(key);
@@ -191,14 +240,11 @@ async function catDelivery(card, key, side, coat) {
           card.position.lerpVectors(above, target, t);
           card.scale.setScalar(lerp(carryScale, 1, t));
         }, ease.in)),
-      tween(340, t => {
-        // 向きを変える間は、しっぽの長さも含めて机から離す。
-        cat.rotation.y = inward + Math.PI * t;
-        cat.position.z = aisle + .66 * Math.sin(Math.PI * t);
-      }, ease.inOut)
+      turn(inward + Math.PI, 300)
         .then(() => walk(side * edge, 850)),
     ]);
   } finally {
+    follow();
     cat.userData.remove();
   }
 }

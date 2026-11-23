@@ -417,7 +417,8 @@ async function flyDecoy(s, key) {
 
 // 猫の乱入: 名前をくわえて走り回り、正しい席に落としていく
 async function flyCat(s, key) {
-  await catDelivery(card(), key, Math.random() < .5 ? -1 : 1, pick(CAT_COATS));
+  const side = Math.random() < .5 ? -1 : 1;
+  await withCatView([side], () => catDelivery(card(), key, side, pick(CAT_COATS)));
 }
 
 // UFO: 名前を吸い上げて連れ去り、遠回りして席の上から降ろす

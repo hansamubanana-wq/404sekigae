@@ -850,12 +850,19 @@ const TRAVEL2 = {
   // 猫: 通路を走り、くわえたカードを席へ届ける
   async cats(list, cards) {
     const coats = shuffleArray(CAT_COATS);
-    await Promise.all(cards.map(async (g, i) => {
+    const deliver = async i => {
       const { s, key } = list[i];
-      await sleep(i * 160);
-      await catDelivery(g, key, i ? 1 : -1, coats[i]);
-      await landCard(g, s, key);
-    }));
+      await catDelivery(cards[i], key, i ? 1 : -1, coats[i]);
+      await landCard(cards[i], s, key);
+    };
+    if (cards.length === 2 && V.camera.aspect >= .86) {
+      await withCatView([-1, 1], () => Promise.all([deliver(0), sleep(160).then(() => deliver(1))]));
+    } else {
+      // 縦向きでは1匹ずつ寄って映す。
+      for (let i = 0; i < cards.length; i++) {
+        await withCatView([i ? 1 : -1], () => deliver(i));
+      }
+    }
   },
 
   // フェイント: 1枚が違う席に降りかけて「…ではなく！」
