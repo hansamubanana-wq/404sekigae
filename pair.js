@@ -665,7 +665,7 @@ const TRAVEL2 = {
   },
 
   // カメラ追跡: カードと一緒にカメラも席へ飛び込む (1人ずつ)
-  async dive(list, cards) {
+  async dive(list, cards, { frontRowImpact } = {}) {
     for (let i = 0; i < cards.length; i++) {
       const g = cards[i], { s, key } = list[i];
       const W = seatW(key), side = W.x > 0 ? -1 : 1;
@@ -676,10 +676,16 @@ const TRAVEL2 = {
       if (i === 0 && cards[1]) tween(400, t => cards[1].position.x = lerp(cards[1].position.x, V.visW * .7, t), ease.in);
       await Promise.all([
         camGo(pose, 1000),
-        tween(950, t => { g.position.copy(bez(p0, ctrl, P, t)); g.scale.setScalar(lerp(s0, 1, t)); g.rotation.y = Math.sin(t * Math.PI) * .6; }, ease.inOut),
+        tween(frontRowImpact ? 1000 : 950, t => { g.position.copy(bez(p0, ctrl, P, t)); g.scale.setScalar(lerp(s0, 1, t)); g.rotation.y = Math.sin(t * Math.PI) * .6; }, ease.inOut),
       ]);
       g.rotation.set(0, 0, 0);
       await landCard(g, s, key);
+      if (frontRowImpact) {
+        sfx("boom", { rate: .54, vol: 1.05 });
+        shake(.48);
+        await Promise.all([rippleFromSeat(key), camHome(1400)]);
+        return;
+      }
       shake(.05);
       await sleep(750);
     }
@@ -1028,7 +1034,7 @@ async function announcePair(list, force = {}) {
     }
     await sleep(force.hold ?? 1200);         // 名前を大きく見せておく
     veil(false, 500);
-    await TRAVEL2[travel](list, cards);
+    await TRAVEL2[travel](list, cards, force);
   } finally {
     // 途中で何かあっても、カメラや照明を元に戻し、全員を着地させる
     cards.forEach(dropCard);

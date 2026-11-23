@@ -269,7 +269,7 @@ async function announceFrontRow(key, others = []) {
     await frontRowClose(1200);        // ゆっくり暗転
     await frontRowOutro(key, at);
     // 名前はもう動画で出ているので、カードを出してカメラと一緒に席へ
-    await announcePair([{ s, key }], { intro: "pop", travel: "dive" });
+    await announcePair([{ s, key }], { intro: "pop", travel: "dive", frontRowImpact: true });
   } else {
     // 再生できなかったときは、すぐ既存の結果表示へ
     await frontRowClose(0);

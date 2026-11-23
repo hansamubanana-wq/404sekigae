@@ -34,6 +34,18 @@
     <div class="logo"><span class="logo-num">404</span><span class="logo-txt">席替え</span></div>
     <div class="status" id="status"></div>
   </div>
+  <div class="seat-tools" id="seatTools" aria-label="席の操作" hidden>
+    <div class="seat-modes" role="group" aria-label="操作モード">
+      <button type="button" data-mode="lock" aria-pressed="false">選んだ席をロック</button>
+      <button type="button" data-mode="retry" aria-pressed="false">選んだ席でやり直し</button>
+      <button type="button" data-mode="manual" aria-pressed="false">手動で入れ替え</button>
+    </div>
+    <div class="seat-actions" id="seatActions" hidden>
+      <button type="button" id="clearSeatsBtn" hidden>選択を解除</button>
+      <button type="button" id="runSelectedBtn" hidden disabled>実行</button>
+      <button type="button" id="closeSeatModeBtn">閉じる</button>
+    </div>
+  </div>
   <div class="controls">
     <button class="icon" id="saveBtn" onclick="saveSeats()" title="保存" aria-label="保存">
       <svg viewBox="0 0 24 24"><path d="M5 3h11l3 3v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M7 3v6h8V3M7 21v-7h10v7"/></svg>
