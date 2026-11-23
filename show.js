@@ -856,6 +856,7 @@ async function showFinale() {
     tween(700, t => o.strip.material.color.copy(col.clone().multiplyScalar(lerp(7, 2.4, t))), ease.out);
   }));
   V.spotSpeed = 4;
+  bgm("finale");
   const b = banner("全員決定！", 3000, "finale");
   confettiShower(6000);
   const palettes = [[0xfbbf24, 0xffffff], [0x2f8cff, 0x7dd3fc], [0xff4fb0, 0xfda4d4], [0xa78bfa, 0xffffff], [0x34d399, 0xfbbf24]];

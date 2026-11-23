@@ -156,14 +156,17 @@ async function shuffleSeats() {
   movable.forEach((pos, i) => { seats[pos] = shuffled[i]; });
 
   if (!worldReady) { renderSheet(); return; }
+  soundUnlock();
   sfx("click");
   frontRowPrime(movable);   // 最前列中央の動画を、ボタン操作の中で再生できる状態にしておく
 
   setBusy(true);
   try {
+    bgm("main");
     hidden = new Set(movable);
     lastIntro = lastFly = null;
     await showStart(movable);
+    bgmPreload();
     updateStatus();
     const order = placeFrontRowLate(shuffleArray(movable));   // 最前列中央は最後の3人の中に
     const rounds = makeRounds(order);                           // 2人ずつの組 (最後は「最前列中央 + 2人」か「最後の1人」)
@@ -196,6 +199,7 @@ async function shuffleSeats() {
   } catch (e) {
     console.error(e);
   } finally {
+    bgmStop();
     if (worldReady) { endTension(); letterbox(false); V.camRig = null; V.billboard = false; setPlateDim(1); V.spotPower = 1; }
     hidden.clear();
     syncAllSeats();

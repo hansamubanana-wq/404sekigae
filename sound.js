@@ -1,11 +1,15 @@
 "use strict";
 /* =========================================================
-   効果音 (Web Audio)
-   素材: Kenney ほか OpenGameArt の CC0 素材 (sounds/CREDITS.txt)
+   効果音と BGM (Web Audio)
+   効果音の出典: sounds/CREDITS.txt
    sfx("名前") で鳴らす。同じ名前に複数の音があるときはランダムに選ぶ
    ========================================================= */
 
-const SND = { ctx: null, master: null, list: null, buf: {}, on: true, loading: null };
+const SND = { ctx: null, master: null, music: null, list: null, buf: {}, on: true, loading: null };
+const BGM_FILES = { main: "media/bgm_main.m4a", tension: "media/bgm_tension.m4a", finale: "media/bgm_finale.m4a" };
+const BGM_FADE = 1.25;
+const BGM_VOLUME = .3;
+const BGM = { files: new Map(), request: null, playing: null };
 
 try { SND.on = localStorage.getItem("404sound") !== "off"; } catch {}
 
@@ -20,6 +24,8 @@ function soundInit() {
     SND.ctx = new AC();
     SND.master = SND.ctx.createGain();
     SND.master.gain.value = SND.on ? .9 : 0;
+    SND.music = SND.ctx.createGain();
+    SND.music.connect(SND.master);
     // 大きな音が重なっても割れないように軽くコンプレッサーをかける
     const comp = SND.ctx.createDynamicsCompressor();
     comp.threshold.value = -14; comp.ratio.value = 4;
@@ -84,6 +90,82 @@ function sfx(name, o = {}) {
     },
     gain: g.gain,
   };
+}
+
+// 発表開始後に取得し、再生する曲だけを PCM に展開する。
+function loadBgm(name) {
+  if (!BGM.files.has(name)) {
+    const file = fetch(BGM_FILES[name]).then(response => {
+      if (!response.ok) throw new Error(`BGM: ${response.status}`);
+      return response.arrayBuffer();
+    }).catch(error => {
+      BGM.files.delete(name);
+      throw error;
+    });
+    BGM.files.set(name, file);
+  }
+  return BGM.files.get(name);
+}
+
+function bgmPreload() {
+  if (!SND.music) return;
+  for (const name of ["tension", "finale"]) loadBgm(name).catch(() => {});
+}
+
+async function bgm(name) {
+  if (!SND.music || !Object.hasOwn(BGM_FILES, name) || BGM.request?.name === name) return;
+  const request = { name };
+  BGM.request = request;
+  if (BGM.playing?.name === name) return;
+  const ctx = SND.ctx;
+  try {
+    const data = await loadBgm(name);
+    if (BGM.request !== request) return;
+    const buffer = await ctx.decodeAudioData(data.slice(0));
+    if (BGM.request !== request) return;
+
+    const src = ctx.createBufferSource();
+    const gain = ctx.createGain();
+    src.buffer = buffer;
+    src.loop = true;
+    src.connect(gain).connect(SND.music);
+    src.onended = () => { src.disconnect(); gain.disconnect(); };
+    const now = ctx.currentTime;
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(BGM_VOLUME, now + BGM_FADE);
+    src.start(now);
+    fadeOutBgm(BGM.playing, BGM_FADE);
+    BGM.playing = { name, src, gain, started: now };
+  } catch {
+    if (BGM.request === request) {
+      BGM.files.delete(name);
+      BGM.request = null;
+    }
+  }
+}
+
+function fadeOutBgm(track, fade) {
+  if (!track) return;
+  const now = SND.ctx.currentTime;
+  // 曲の切り替えが続いても、その時点のフェードイン音量から下げる。
+  const level = BGM_VOLUME * Math.min(1, (now - track.started) / BGM_FADE);
+  const volume = track.gain.gain;
+  volume.cancelScheduledValues(now);
+  volume.setValueAtTime(fade > 0 ? level : 0, now);
+  if (fade > 0) volume.linearRampToValueAtTime(0, now + fade);
+  track.src.stop(now + Math.max(0, fade));
+}
+
+function bgmStop(fade = BGM_FADE) {
+  BGM.request = null;
+  fadeOutBgm(BGM.playing, fade);
+  BGM.playing = null;
+}
+
+function bgmDuck(ducked) {
+  if (!SND.music) return;
+  const now = SND.ctx.currentTime;
+  SND.music.gain.setTargetAtTime(ducked ? 0 : 1, now, ducked ? .02 : .12);
 }
 
 // 画面の左右位置 (ステージ座標の x) から左右の定位を決める

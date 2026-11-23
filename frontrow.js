@@ -266,7 +266,9 @@ async function announceFrontRow(key, others = []) {
   await showRemaining(shuffleArray([{ s, key }, ...others]));
   const at = await frontRowIntro(key);
   let result = "failed";
+  bgmDuck(true);
   try { result = await playFrontRow(s); } catch { result = "failed"; }
+  finally { bgmDuck(false); }
   if (result === "done") {
     await sleep(FRONT_ROW.endHold);   // 名前の出た終了画面を少し見せる
     await frontRowClose(1200);        // ゆっくり暗転
@@ -286,6 +288,9 @@ async function announceFrontRow(key, others = []) {
     await announcePair([{ s, key }]);
   }
   // 残りの2人は短い演出で一気に
-  if (others.length) await announcePair(others, { intro: "pop", travel: "arc", hold: 600 });
+  if (others.length) {
+    bgm("tension");
+    await announcePair(others, { intro: "pop", travel: "arc", hold: 600 });
+  }
   return result;
 }
