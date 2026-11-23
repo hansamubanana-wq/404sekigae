@@ -406,6 +406,7 @@ async function initWorld() {
   const warm = new THREE.PointLight(0xffb347, 10, 10, 2);
   warm.position.set(0, 2.6, PODIUM_Z + 1.6);
   scene.add(warm);
+  V.roomWarmLight = warm;
 
   // ポストエフェクト (ブルーム)
   const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });

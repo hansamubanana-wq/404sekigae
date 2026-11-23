@@ -38,7 +38,7 @@ function soundInit() {
 // 最初のタップで鳴らせるようにする (ブラウザの決まり)
 function soundUnlock() {
   soundInit();
-  if (SND.ctx && SND.ctx.state !== "running") SND.ctx.resume().catch(() => {});
+  if (SND.ctx && SND.ctx.state !== "running") return SND.ctx.resume().catch(() => {});
 }
 
 function soundLoad() {
@@ -175,10 +175,10 @@ function bgmHome() {
   bgm("main", HOME_BGM_VOLUME);
 }
 
-function bgmDuck(ducked) {
+function bgmDuck(ducked, level = 0) {
   if (!SND.music) return;
   const now = SND.ctx.currentTime;
-  SND.music.gain.setTargetAtTime(ducked ? 0 : 1, now, ducked ? .02 : .12);
+  SND.music.gain.setTargetAtTime(ducked ? level : 1, now, ducked ? .02 : .12);
 }
 
 // 画面の左右位置 (ステージ座標の x) から左右の定位を決める
