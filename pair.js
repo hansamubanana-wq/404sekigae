@@ -726,13 +726,15 @@ const TRAVEL2 = {
       const ctrl = p0.clone().lerp(P, .5).add(v3(0, 2, 1.5));
       sfx("whoosh", { rate: .8 });
       if (i === 0 && cards[1]) tween(400, t => cards[1].position.x = lerp(cards[1].position.x, V.visW * .7, t), ease.in);
-      // 最前列中央では移動の最後の2割に約1秒を使い、着地で通常速度に戻す。
+      // 最前列中央では、最後の2割を約1秒から約2秒に伸ばす。
+      const approachMs = 731, slowMs = 1938;
+      const split = approachMs / (approachMs + slowMs);
       const approach = frontRowImpact
-        ? t => t < .43 ? .8 * ease.out(t / .43) : lerp(.8, 1, (t - .43) / .57)
+        ? t => t < split ? .8 * ease.out(t / split) : lerp(.8, 1, (t - split) / (1 - split))
         : ease.inOut;
       await Promise.all([
-        camGo(pose, frontRowImpact ? 1700 : 1000, approach),
-        tween(frontRowImpact ? 1700 : 950, t => {
+        camGo(pose, frontRowImpact ? approachMs + slowMs : 1000, approach),
+        tween(frontRowImpact ? approachMs + slowMs : 950, t => {
           g.position.copy(bez(p0, ctrl, P, t));
           g.scale.setScalar(lerp(s0, 1, t));
           g.rotation.y = Math.sin(t * Math.PI) * .6;
@@ -845,45 +847,15 @@ const TRAVEL2 = {
     await dolly(0, null, 500);
   },
 
-  // 猫: 猫がカードをくわえて、席まで走っていく
+  // 猫: 通路を走り、くわえたカードを席へ届ける
   async cats(list, cards) {
-    const W = V.visW, H = V.visH, CS = 1.2;
-    const furs = [0xf2a541, 0x9aa3ad, 0x3a3a3a, 0xf6efe4];
-    bubble("！？", v3(0, H * .2, 0), 700);
-    for (let i = 0; i < 24; i++) sfx("step", { vol: .45, delay: i * .14 / TIME_SCALE, rate: 1.5, vary: .3 });
-    await Promise.all(cards.map((g, i) => sleep(i * 200).then(async () => {
+    const coats = shuffleArray(CAT_COATS);
+    await Promise.all(cards.map(async (g, i) => {
       const { s, key } = list[i];
-      const from = cards.length > 1 ? (i ? 1 : -1) : -1;
-      const cat = stageActor(buildCat, pick(furs));
-      const dirSet = d => cat.scale.set(CS * d, CS, CS);   // d = +1: 右向き
-      const low = v3(g.position.x, -H * .3, 0);
-      const s0 = g.scale.x, small = V.heroK * .4, g0 = g.position.clone();
-      tween(500, t => { g.position.lerpVectors(g0, low.clone().add(v3(0, .7 * CS, .25)), t); g.scale.setScalar(lerp(s0, small, t)); }, ease.out);
-      const start = v3(from * (W / 2 + 1.5), -H * .3 - .75 * CS, .2);
-      cat.position.copy(start); dirSet(-from);
-      const reach = v3(low.x + from * .9 * CS, start.y, .2);
-      await tween(800, t => cat.position.lerpVectors(start, reach, t), ease.out);
-      bubble("ニャッ", cat.position.clone().add(v3(0, 1.3 * CS, 0)), 700);
-      // 席に向かって奥へ走る
-      const P = plateLocal(key);
-      const goal = P.clone().add(v3(P.x > reach.x ? -.95 * CS : .95 * CS, -.62 * CS, -.25));
-      dirSet(goal.x > reach.x ? 1 : -1);
-      const d = goal.x > reach.x ? 1 : -1;
-      const gs = g.scale.x;
-      await tween(1300, t => {
-        cat.position.lerpVectors(reach, goal, t);
-        cat.position.y += Math.abs(Math.sin(t * Math.PI * 7)) * .08;
-        g.position.copy(cat.position).add(v3(d * .95 * CS, .62 * CS, .25));
-        g.scale.setScalar(lerp(gs, 1, t));
-        g.rotation.z = Math.sin(t * 30) * .1;
-      }, ease.inOut);
-      g.rotation.set(0, 0, 0);
-      const q0 = g.position.clone();
-      await tween(250, t => g.position.lerpVectors(q0, P, t), ease.out);
-      const exit = v3(goal.x + d * (W + 4), goal.y, goal.z);
-      tween(1100, t => cat.position.lerpVectors(goal, exit, t), ease.in).then(() => cat.userData.remove());
+      await sleep(i * 160);
+      await catDelivery(g, key, i ? 1 : -1, coats[i]);
       await landCard(g, s, key);
-    })));
+    }));
   },
 
   // フェイント: 1枚が違う席に降りかけて「…ではなく！」
@@ -1134,7 +1106,7 @@ async function warmUpShaders() {
   const actors = [
     wind, ufo.g, stageActor(buildRocket), stageActor(buildClock), stageActor(buildZs),
     stageActor(showRingRig), stageActor(showCrystalRig), stageActor(showConstellation), stageActor(showLightRails),
-    ...[0xf2a541, 0x9aa3ad, 0x3a3a3a, 0xf6efe4].map(fur => stageActor(buildCat, fur)),
+    ...CAT_COATS.map(coat => stageActor(buildCat, coat)),
   ];
   const glass = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), new THREE.ShaderMaterial({
     vertexShader: GLASS_VERT, fragmentShader: GLASS_FRAG,

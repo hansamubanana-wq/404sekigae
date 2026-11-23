@@ -9,6 +9,7 @@ const SND = { ctx: null, master: null, music: null, list: null, buf: {}, loading
 const BGM_FILES = { main: "media/bgm_main.m4a", tension: "media/bgm_tension.m4a", finale: "media/bgm_finale.m4a" };
 const BGM_FADE = 1.25;
 const BGM_VOLUME = { main: .36, tension: .44, finale: .6 };
+const HOME_BGM_VOLUME = .2;
 const SFX_VOLUME = .85;     // 効果音全体の音量 (BGM とのバランス)
 const BGM = { files: new Map(), request: null, playing: null };
 
@@ -91,7 +92,7 @@ function sfx(name, o = {}) {
   };
 }
 
-// 発表開始後に取得し、再生する曲だけを PCM に展開する。
+// 再生する曲だけを PCM に展開する。
 function loadBgm(name) {
   if (!BGM.files.has(name)) {
     const file = fetch(BGM_FILES[name]).then(response => {
@@ -111,11 +112,21 @@ function bgmPreload() {
   for (const name of ["tension", "finale"]) loadBgm(name).catch(() => {});
 }
 
-async function bgm(name) {
-  if (!SND.music || !Object.hasOwn(BGM_FILES, name) || BGM.request?.name === name) return;
-  const request = { name };
+async function bgm(name, level = BGM_VOLUME[name]) {
+  if (!SND.music || !Object.hasOwn(BGM_FILES, name)) return;
+  if (BGM.request?.name === name) {
+    if (BGM.request.level !== level) {
+      BGM.request.level = level;
+      if (BGM.playing?.name === name) rampBgm(BGM.playing, level, BGM_FADE);
+    }
+    return;
+  }
+  const request = { name, level };
   BGM.request = request;
-  if (BGM.playing?.name === name) return;
+  if (BGM.playing?.name === name) {
+    rampBgm(BGM.playing, level, BGM_FADE);
+    return;
+  }
   const ctx = SND.ctx;
   try {
     const data = await loadBgm(name);
@@ -130,11 +141,11 @@ async function bgm(name) {
     src.connect(gain).connect(SND.music);
     src.onended = () => { src.disconnect(); gain.disconnect(); };
     const now = ctx.currentTime;
-    gain.gain.setValueAtTime(0, now);
-    gain.gain.linearRampToValueAtTime(BGM_VOLUME[name], now + BGM_FADE);
+    const track = { name, src, gain, from: 0, to: 0, started: now, duration: 0 };
+    rampBgm(track, request.level, BGM_FADE);
     src.start(now);
     fadeOutBgm(BGM.playing, BGM_FADE);
-    BGM.playing = { name, src, gain, started: now };
+    BGM.playing = track;
   } catch {
     if (BGM.request === request) {
       BGM.files.delete(name);
@@ -143,22 +154,25 @@ async function bgm(name) {
   }
 }
 
-function fadeOutBgm(track, fade) {
-  if (!track) return;
+function rampBgm(track, target, duration) {
   const now = SND.ctx.currentTime;
-  // 曲の切り替えが続いても、その時点のフェードイン音量から下げる。
-  const level = BGM_VOLUME[track.name] * Math.min(1, (now - track.started) / BGM_FADE);
+  const t = track.duration ? Math.min(1, (now - track.started) / track.duration) : 1;
+  const level = track.from + (track.to - track.from) * t;
   const volume = track.gain.gain;
   volume.cancelScheduledValues(now);
-  volume.setValueAtTime(fade > 0 ? level : 0, now);
-  if (fade > 0) volume.linearRampToValueAtTime(0, now + fade);
-  track.src.stop(now + Math.max(0, fade));
+  volume.setValueAtTime(level, now);
+  volume.linearRampToValueAtTime(target, now + duration);
+  Object.assign(track, { from: level, to: target, started: now, duration });
 }
 
-function bgmStop(fade = BGM_FADE) {
-  BGM.request = null;
-  fadeOutBgm(BGM.playing, fade);
-  BGM.playing = null;
+function fadeOutBgm(track, fade) {
+  if (!track) return;
+  rampBgm(track, 0, fade);
+  track.src.stop(SND.ctx.currentTime + fade);
+}
+
+function bgmHome() {
+  bgm("main", HOME_BGM_VOLUME);
 }
 
 function bgmDuck(ducked) {
@@ -169,6 +183,3 @@ function bgmDuck(ducked) {
 
 // 画面の左右位置 (ステージ座標の x) から左右の定位を決める
 function panOf(local) { return V && V.visW ? Math.max(-.8, Math.min(.8, local.x / (V.visW / 2))) : 0; }
-
-// 最初のタップで音を有効にする (ブラウザの決まり)
-["pointerdown", "touchend", "keydown"].forEach(ev => addEventListener(ev, soundUnlock, { passive: true }));

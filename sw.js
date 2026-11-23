@@ -2,7 +2,7 @@
 // ・このサイトのファイル: ネットを優先 (更新がすぐ反映される)。つながらないときはキャッシュ
 // ・three.js やフォントなど外部のファイル: キャッシュを優先
 const CACHE = "sekigae-v6";
-// BGM は発表開始後の通常の fetch で読み込むため、事前キャッシュには含めない。
+// BGM は最初の操作以降に取得するため、事前キャッシュには含めない。
 const CORE = [
   "./", "index.html", "style.css", "students.js", "sound.js", "app.js", "world.js", "models.js", "extras.js", "frontrow.js", "pair.js", "show.js",
   "sounds/_list.json", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png",
