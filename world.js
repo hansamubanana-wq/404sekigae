@@ -902,6 +902,11 @@ function burst(at, color, n = 120, speed = 3, o = {}) {
   V.sparks.active = true;
   const S = V.sparks, pos = S.geo.attributes.position.array, col = S.geo.attributes.aColor.array;
   S.pts.visible = true;
+  const colorAttr = S.geo.attributes.aColor;
+  const first = Math.min(n, S.N - S.next);
+  colorAttr.addUpdateRange(S.next * 3, first * 3);
+  if (first < n) colorAttr.addUpdateRange(0, (n - first) * 3);
+  colorAttr.needsUpdate = true;
   for (let k = 0; k < n; k++) {
     const i = S.next; S.next = (S.next + 1) % S.N;
     const a = Math.random() * 6.283, b = Math.acos(2 * Math.random() - 1);
@@ -1020,7 +1025,7 @@ function toScreen(local) {
   return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight };
 }
 
-/* ---------------- タップで固定 ---------------- */
+/* ---------------- 机と名札の当たり判定 ---------------- */
 function setupPicking(canvas) {
   const ray = new THREE.Raycaster();
   const targets = [V.deskParts.ped, V.deskParts.top];
@@ -1028,15 +1033,12 @@ function setupPicking(canvas) {
     const o = V.seat[key];
     targets.push(o.front, o.back);
   }
-  let down = null;
-  canvas.addEventListener("pointerdown", e => { down = { x: e.clientX, y: e.clientY }; });
-  canvas.addEventListener("pointerup", e => {
-    if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 12) return;
-    down = null;
+  bindSeatGestures(canvas, e => {
+    if (!document.body.classList.contains("ready")) return;
     const ndc = new THREE.Vector2(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
     ray.setFromCamera(ndc, V.camera);
     const hit = ray.intersectObjects(targets, false)[0];
-    if (hit) onSeatTap(hit.instanceId === undefined ? hit.object.userData.key : realSeatPositions[hit.instanceId]);
+    if (hit) return hit.instanceId === undefined ? hit.object.userData.key : realSeatPositions[hit.instanceId];
   });
 }
 
@@ -1065,12 +1067,15 @@ function frame(now) {
   // カメラ: ゆっくり揺れる + 寄り
   if (V.camRig) {
     V.camRig(dt, t);
+  } else if (V.fixedView) {
+    V.camera.position.copy(V.homePos);
+    V.camera.quaternion.copy(V.homeQuat);
   } else {
     const sway = V.sway.set(Math.sin(t * .23) * .18, Math.sin(t * .31) * .1, 0).applyQuaternion(V.homeQuat);
     V.camera.position.copy(V.homePos).add(V.camOffset).add(sway);
     V.camera.quaternion.copy(V.homeQuat);
   }
-  if (V.shakeAmt > .002) {
+  if (!V.fixedView && V.shakeAmt > .002) {
     const k = V.shakeAmt;
     V.camera.position.add(V.shakeOffset.set((Math.random() - .5) * k, (Math.random() - .5) * k, (Math.random() - .5) * k * .5));
     V.shakeAmt *= Math.pow(V.shakeKeep ? 1 : .015, dt);
