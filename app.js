@@ -348,9 +348,9 @@ async function shuffleSeats(scope = null) {
 
   const operation = scope ? "選んだ席でやり直し" : "席替え";
   if (!worldReady) { recordSeatHistory(operation); renderSheet(); return; }
+  frontRowPrime(movable);   // ボタン操作の中で直接、音付き再生を試す
   soundUnlock();
   sfx("click");
-  frontRowPrime(movable);   // 最前列中央の動画を、ボタン操作の中で再生できる状態にしておく
 
   replayScope = scope;
   setBusy(true);
