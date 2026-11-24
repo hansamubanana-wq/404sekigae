@@ -11,7 +11,7 @@ const MC_SUBTITLE_OUT = 13.28;
 const MC_RISE_AT = 12.68;
 const MC_END = 13.34;
 const MC_WALK_END = 4.14;
-const USE_QUATERNIUS_MC = true;
+const USE_KENNEY_MC = true;
 const MC_STEP_INTERVAL = .65;
 const MC_SOLE_AT = .052;
 const MC_STEP_COUNT = 6;
@@ -145,7 +145,7 @@ async function loadMcHost() {
 }
 
 async function loadMcActor() {
-  if (USE_QUATERNIUS_MC) {
+  if (USE_KENNEY_MC) {
     try { return await loadMcSuit(); } catch (error) {
       console.warn("司会者のモデルを読み込めませんでした", error);
     }

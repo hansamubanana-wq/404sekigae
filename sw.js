@@ -1,11 +1,11 @@
 // オフラインでも開けるようにするキャッシュ
 // ・このサイトのファイル: ネットを優先 (更新がすぐ反映される)。つながらないときはキャッシュ
 // ・three.js やフォントなど外部のファイル: キャッシュを優先
-const CACHE = "sekigae-v28";
+const CACHE = "sekigae-v29";
 // 音声はアプリが必要なタイミングで読み込むので、事前キャッシュには含めない。
 const CORE = [
   "./", "index.html", "style.css", "students.js", "sound.js", "app.js", "world.js", "models.js", "mc-model.js", "mc-suit.js", "mc.js", "extras.js", "frontrow.js", "pair.js", "show.js",
-  "sounds/_list.json", "media/mc/suit-male.glb", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png",
+  "sounds/_list.json", "media/mc/kenney-host.glb", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png",
 ];
 
 self.addEventListener("install", e => {
