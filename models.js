@@ -94,7 +94,7 @@ function buildCat(color) {
   head.add(new THREE.LineSegments(whiskerGeo, new THREE.LineBasicMaterial({ color: 0xe4cfc0 })));
 
   const legs = [];
-  for (const [x, z, phase] of [[.23, .107, 0], [.23, -.107, Math.PI], [-.33, .115, Math.PI], [-.33, -.115, 0]]) {
+  for (const [x, z, phase] of [[.23, .057, 0], [.23, -.057, Math.PI], [-.33, .057, Math.PI], [-.33, -.057, 0]]) {
     const leg = new THREE.Group();
     leg.position.set(x, .30, z);
     part(leg, fur, 0, -.106, 0, x < 0 ? .087 : .062, .15, .063);
@@ -112,26 +112,35 @@ function buildCat(color) {
   shadow.rotation.x = -Math.PI / 2;
   shadow.position.set(-.04, .024, 0);
   g.add(shadow, torso);
-  let gait = 0;
+  let gait = 0, lastX = 0, lastZ = 0;
   g.userData.mouth = mouth;
   g.userData.reset = () => {
     gait = 0;
     g.userData.run = false;
     g.userData.jump = g.userData.nod = 0;
-    g.userData.search = false;
+    g.userData.table = 0;
+    lastX = g.position.x;
+    lastZ = g.position.z;
   };
-  g.userData.update = (t, dt) => {
-    const { run, jump, nod, search } = g.userData;
-    if (run) gait += dt * 17;
+  g.userData.update = t => {
+    const { run, jump, nod, table } = g.userData;
+    if (run) gait += Math.hypot(g.position.x - lastX, g.position.z - lastZ) * 5.1;
+    lastX = g.position.x;
+    lastZ = g.position.z;
+    const bob = run ? .018 * Math.abs(Math.sin(gait)) : 0;
     for (const { leg, phase } of legs) {
       const stride = gait + phase;
-      leg.rotation.z = run ? .48 * Math.sin(stride) : .32 * phase / Math.PI * jump;
-      leg.position.y = .30 + .18 * jump + (run ? .14 * Math.abs(Math.sin(stride)) : 0);
+      const angle = run ? .43 * Math.sin(stride) : .24 * phase / Math.PI * jump;
+      const sin = Math.sin(angle), cos = Math.cos(angle);
+      // 接地する足は、足先の丸みまで含めて踏み面の高さに合わせる。
+      const foot = .25 * cos - .036 * sin + Math.hypot(.086 * sin, .048 * cos);
+      leg.rotation.z = angle;
+      leg.position.y = foot - bob + .135 * jump + (run ? .085 * Math.max(0, Math.cos(stride)) : 0);
     }
-    torso.position.y = run ? .025 * Math.abs(Math.sin(gait)) : 0;
-    head.position.y = .59 - .327 * nod;
+    torso.position.y = bob;
+    head.position.y = lerp(lerp(.59, .43 - .07 * jump, table), .263, nod);
     head.rotation.z = run ? .030 * Math.sin(gait) : -.46 * nod;
-    head.rotation.y = search ? .29 * Math.sin(t * 20) : .055 * Math.sin(t * 4);
+    head.rotation.y = .055 * Math.sin(t * 4);
     tail.rotation.y = .35 * Math.sin(t * 5);
     tail.rotation.z = .13 * Math.sin(t * 6);
   };
@@ -151,39 +160,34 @@ function catOffscreenX(side, lane) {
   return side * (far + 1.40);  // 鼻先・札・しっぽまで画面の外に出す
 }
 
-// 通路から列の端へ飛び乗り、天板を渡って札を届ける。
-async function catDelivery(card, key, coat) {
+// 机の間の通路を走り、名前を届ける机の奥側だけに乗る。
+async function catDelivery(card, s, key, coat) {
   const { x, z } = seatXZ(key);
   const [row, col] = key.split("-").map(Number);
   const columns = realSeatPositions.filter(seat => seat.startsWith(`${row}-`)).map(seat => Number(seat.split("-")[1]));
   const left = Math.min(...columns), right = Math.max(...columns);
   const side = col - left === right - col ? pick([-1, 1]) : col - left < right - col ? -1 : 1;
-  const first = side < 0 ? left : right;
-  const hops = Math.abs(col - first);
   const dir = -side;
-  const start = x + side * SX * hops;
-  const level = DESK_SURFACE_Y + .016;
-  const floor = .016;
-  const lane = z - .205;
+  const level = DESK_SURFACE_Y + .002;
+  const floor = .002;
+  const lane = z - .292;
   const exitLane = z - SZ / 2;
-  // 通り道の名札は天板の手前に下げ、名前や「?」が読める状態で猫を通す。
-  const routePlates = Array.from({ length: hops + 1 }, (_, i) => {
-    const seat = V.seat[`${row}-${col + side * i}`];
-    return { seat, scale: seat.pivot.scale.clone() };
-  });
+  const seat = V.seat[key];
+  const shells = card.children.map(mesh => ({ mesh, visible: mesh.visible }));
   const cat = stageActor(buildCat, coat);
   V.scene.add(cat);
   cat.scale.setScalar(1.16);
-  cat.position.set(catOffscreenX(side, lane), floor, lane);
-  cat.rotation.y = dir > 0 ? 0 : Math.PI;
+  cat.position.set(catOffscreenX(side, exitLane), floor, exitLane);
+  const facing = dir > 0 ? 0 : Math.PI;
+  cat.rotation.y = facing;
   const motion = cat.userData;
   const pitchAxis = v3(1);
   const worldTurn = new THREE.Quaternion();
   const gripOffset = v3(), grip = v3(), contact = v3();
   const scale = .62;
-  const halfCardHeight = (FACE_H + .14) / 2;
-  const contactTilt = -Math.PI / 2 + .078;
-  let tilt = -.27;
+  const halfCardHeight = FACE_H / 2;
+  const contactTilt = -Math.PI / 2 + .109;
+  let tilt = -.78;
   const positionCard = (anchor, edge) => {
     worldTurn.setFromAxisAngle(pitchAxis, tilt);
     gripOffset.set(0, edge * scale * halfCardHeight, 0).applyQuaternion(worldTurn).add(anchor);
@@ -199,11 +203,13 @@ async function catDelivery(card, key, coat) {
   };
 
   let stopFollowing;
+  const normalScale = seat.pivot.scale.x;
+  const normal = seat.base.clone();
+  normal.y += Math.sin(V.time * 1.3 + seat.phase) * .03;
   try {
-    for (const { seat, scale } of routePlates) {
-      seat.catPlateOffset = v3(0, -.34, .23);
-      seat.pivot.scale.copy(scale).multiplyScalar(.52);
-    }
+    // 配達中も到着後も同じ名前札の面を使う。運んでいる間は席に「?」だけが残る。
+    for (const { mesh } of shells) mesh.visible = false;
+    card.add(seat.front);
     card.scale.setScalar(scale);
     positionCard(motion.mouth.getWorldPosition(grip), -1);
     card.visible = true;
@@ -212,43 +218,28 @@ async function catDelivery(card, key, coat) {
       if (carrying) positionCard(motion.mouth.getWorldPosition(grip), -1);
       else positionCard(contact, 1);
     });
-    const approach = start + side * 2.14;
-    await walk(approach, 390);
-    const firstDesk = start - dir * .20;
-    await tween(295, t => {
+    const approach = x - dir * 1.54;
+    const onDesk = x - dir * .32;
+    await walk(approach, 880 + Math.abs(cat.position.x - approach) * 37);
+    const pending = { position: normal.clone(), rotation: V.homeQuat.clone(), scale: normalScale };
+    seat.catPlacement = pending;
+    await tween(470, t => {
       motion.jump = Math.sin(t * Math.PI);
+      motion.table = ease.inOut(clamp01(t / .65));
+      const advance = ease.inOut(clamp01((t - .15) / .85));
+      cat.rotation.y = facing - dir * .36 * motion.jump;
       cat.position.set(
-        lerp(approach, firstDesk, clamp01((t - .16) / .84)),
-        lerp(floor, level, ease.out(clamp01(t / .58))) + .34 * motion.jump,
-        lane,
+        lerp(approach, onDesk, advance),
+        lerp(floor, level, ease.out(clamp01(t / .47))) + .15 * motion.jump,
+        lerp(exitLane, lane, advance),
       );
+      // 決まる前の札は形と大きさを保ち、置き場所を少しだけ空ける。
+      pending.position.z = normal.z + .53 * ease.inOut(t);
     }, ease.linear);
     motion.jump = 0;
-    for (let i = 0; i < hops; i++) {
-      const desk = start + dir * i * SX;
-      if (i > 0 && i === hops - 1) {
-        // 隣の席で一瞬迷い、首を振ってから次の机へ進む。
-        await walk(desk);
-        motion.search = true;
-        await sleep(135);
-        motion.search = false;
-      }
-      const takeoff = desk + dir * .30;
-      // 到着時は前足を目的の机、後ろ足を手前の机に置いて、長い胴を支える。
-      const touchdown = desk + dir * (SX - (i === hops - 1 ? .76 : .28));
-      await walk(takeoff);
-      await tween(250, t => {
-        motion.jump = Math.sin(t * Math.PI);
-        cat.position.set(lerp(takeoff, touchdown, t), level + .36 * motion.jump, lane);
-      }, ease.linear);
-      motion.jump = 0;
-    }
     await tween(315, t => {
-      tilt = lerp(-.27, contactTilt, ease.out(t));
+      tilt = lerp(-.78, contactTilt, ease.out(t));
       motion.nod = ease.in(t);
-      cat.position.z = lerp(lane, z - .225, t);
-      // 置いたカードと目的の席の「?」を同時に見せる。
-      V.seat[key].catPlateOffset.x = dir * .78 * ease.inOut(t);
     }, ease.linear);
     // 札の下端が机に触れてから離し、その端を支点に寝かせる。
     card.localToWorld(contact.set(0, -halfCardHeight, 0));
@@ -258,9 +249,24 @@ async function catDelivery(card, key, coat) {
       tilt = lerp(contactTilt, -Math.PI / 2, clamp01(t * 2.7));
       motion.nod = 1 - t;
     }, ease.inOut);
+    const placed = card.getWorldPosition(v3());
+    const placedRotation = card.getWorldQuaternion(new THREE.Quaternion());
+    const pose = { position: placed.clone(), rotation: placedRotation.clone(), scale };
+    seat.catPlacement = pose;
+    seat.flipper.add(seat.front);
+    card.visible = false;
+    await land(s, key, "place");
+    // 置いた1枚をその場で表示し続け、猫が去る間に普段の名札の位置へ戻す。
+    const settle = tween(850, t => {
+      normal.y = seat.base.y + Math.sin(V.time * 1.3 + seat.phase) * .03;
+      pose.position.lerpVectors(placed, normal, t);
+      pose.rotation.slerpQuaternions(placedRotation, V.homeQuat, t);
+      pose.scale = lerp(scale, normalScale, t);
+    }, ease.inOut).then(() => { if (seat.catPlacement === pose) seat.catPlacement = null; });
     const fromX = cat.position.x, fromZ = cat.position.z;
     await tween(290, t => {
       motion.jump = Math.sin(t * Math.PI);
+      motion.table = 1 - ease.inOut(t);
       const fall = ease.in(clamp01((t - .52) / .48));
       cat.position.set(
         fromX + dir * .80 * t,
@@ -269,25 +275,35 @@ async function catDelivery(card, key, coat) {
       );
     }, ease.linear);
     motion.jump = 0;
-    await walk(catOffscreenX(dir, exitLane), 605);
+    await walk(catOffscreenX(dir, exitLane), 870);
+    await settle;
   } finally {
     stopFollowing?.();
     cat.userData.remove();
-    for (const { seat, scale } of routePlates) {
-      seat.catPlateOffset = null;
-      seat.pivot.scale.copy(scale);
-    }
+    seat.flipper.add(seat.front);
+    seat.catPlacement = null;
+    seat.pivot.quaternion.copy(V.homeQuat);
+    seat.pivot.scale.setScalar(normalScale);
+    for (const { mesh, visible } of shells) mesh.visible = visible;
   }
 }
 
 async function deliverCatCards(list, cards) {
   const coats = shuffleArray(CAT_COATS);
   cards.forEach(card => { card.visible = false; });
-  for (let i = 0; i < list.length; i++) {
-    const { s, key } = list[i];
-    await catDelivery(cards[i], key, coats[i]);
-    cards[i].visible = false;
-    await land(s, key, "place");
+  // 寄らずに少し高い位置へ移り、通常サイズの札の奥にある天板を見せる。
+  const aim = V.lookTarget;
+  const radius = V.homePos.distanceTo(aim) * 1.04;
+  const angle = THREE.MathUtils.degToRad(74);
+  const above = v3(aim.x, aim.y + radius * Math.sin(angle), aim.z + radius * Math.cos(angle));
+  await camGo(camPoseLook(above, aim), 660);
+  try {
+    for (let i = 0; i < list.length; i++) {
+      const { s, key } = list[i];
+      await catDelivery(cards[i], s, key, coats[i]);
+    }
+  } finally {
+    await camHome(660);
   }
 }
 
