@@ -704,11 +704,14 @@ function buildDesks() {
     frame.position.z = -.02;
     const lock = new THREE.Mesh(new THREE.PlaneGeometry(.3, .3), new THREE.MeshBasicMaterial({ map: V.tex.lock, transparent: true, depthWrite: false }));
     lock.position.set(FACE_W / 2 - .06, FACE_H / 2 - .02, .03);
-    pivot.add(flipper, frame, lock);
+    const motion = new THREE.Group();
+    motion.add(flipper, frame, lock);
+    pivot.add(motion);
     V.scene.add(pivot);
 
     front.userData.key = back.userData.key = key;
-    V.seat[key] = { index, pivot, flipper, front, back, frame, lock, phase: Math.random() * 6.28, base: v3(x, PLATE_Y, z + .12) };
+    const [row, col] = key.split("-").map(Number);
+    V.seat[key] = { index, row, col, pivot, motion, flipper, front, back, frame, lock, phase: Math.random() * 6.28, base: v3(x, PLATE_Y, z + .12) };
   });
 }
 
@@ -1162,6 +1165,7 @@ function frame(now) {
   V.time = (V.time || 0) + dt;
   const t = V.time;
   V.uniforms.uTime.value = t;
+  updateGroove(now);
 
   // 45 秒分の壁のノイズを補間し、折り返して境界をつなぐ。
   V.wallFrame.value = 15 - Math.abs(t / 3 % 30 - 15);
@@ -1174,9 +1178,11 @@ function frame(now) {
     V.camera.quaternion.copy(V.homeQuat);
   } else {
     const sway = V.sway.set(Math.sin(t * .23) * .18, Math.sin(t * .31) * .1, 0).applyQuaternion(V.homeQuat);
-    V.camera.position.copy(V.homePos).add(V.camOffset).add(sway);
+    V.camera.position.copy(V.homePos).add(V.camOffset);
+    if (!groove.power) V.camera.position.add(sway);
     V.camera.quaternion.copy(V.homeQuat);
   }
+  grooveCamera(V.camera, now);
   if (!V.fixedView && V.shakeAmt > .002) {
     const k = V.shakeAmt;
     V.camera.position.add(V.shakeOffset.set((Math.random() - .5) * k, (Math.random() - .5) * k, (Math.random() - .5) * k * .5));
@@ -1186,22 +1192,24 @@ function frame(now) {
   // スポットライト
   V.spotT = (V.spotT || 0) + dt * V.spotSpeed;
   const fu = V.floor.material.uniforms;
+  const spotPower = V.spotPower * (1 + .31 * groove.pulse);
   V.spots.forEach((s, i) => {
     const a = V.spotT * .35 + s.phase;
     s.target.set(Math.sin(a) * 6.5, 0, Math.cos(a * .8 + i) * 4.2 - .6).lerp(V.spotFocusAt, V.spotFocus);
     if (V.spotLock && V.spotLock[i]) s.target.lerp(V.spotLock[i], V.spotLockAmt || 0);   // 1本ずつ別の場所に向ける
     aimBeam(s.mesh, s.from, s.target, lerp(1.7, 1.1, V.spotFocus));
     fu.uSpot.value[i].set(s.target.x, s.target.z, lerp(1.9, 1.3, V.spotFocus));
-    fu.uSpotCol.value[i].set(s.col.r, s.col.g, s.col.b).multiplyScalar(V.spotPower);
-    s.mesh.material.uniforms.uOpacity.value = .16 * V.spotPower;
-    s.mesh.material.uniforms.uColor.value.copy(s.col);
+    const color = grooveSpot(s.mesh.material.uniforms.uColor.value, s.col);
+    fu.uSpotCol.value[i].set(color.r, color.g, color.b).multiplyScalar(spotPower);
+    s.mesh.material.uniforms.uOpacity.value = .16 * spotPower;
   });
 
   // 名札がふわふわ浮く
   for (const key in V.seat) {
     const o = V.seat[key];
     o.pivot.position.x = o.base.x + (o.rippleX || 0);
-    o.pivot.position.y = o.base.y + Math.sin(t * 1.3 + o.phase) * .03 + (o.jump || 0) + (o.rippleY || 0);
+    const lift = groovePlate(o, now);
+    o.pivot.position.y = o.base.y + (groove.power ? lift : Math.sin(t * 1.3 + o.phase) * .03) + (o.jump || 0) + (o.rippleY || 0);
     o.pivot.position.z = o.base.z + (o.rippleZ || 0);
     if (o.catPlacement) {
       o.pivot.position.copy(o.catPlacement.position);

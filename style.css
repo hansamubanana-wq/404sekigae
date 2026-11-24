@@ -375,6 +375,10 @@ body.letterbox::before, body.letterbox::after { transform: none; }
   min-width: 48px;
   min-height: 44px;
   padding: 0 6px;
+  color: inherit;
+  background: transparent;
+  border: 1px solid #ffde8159;
+  border-radius: 8px;
 }
 #mcBeatControls output {
   min-width: 59px;

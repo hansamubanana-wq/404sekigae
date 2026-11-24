@@ -686,6 +686,8 @@ async function land(s, key, style = "pop") {
   card().visible = false;
   hidden.delete(key);
   seatLook(key);
+  protectGrooveName(key);
+  boostGroove(950, .30);
   mcSeatLanded(key);
   if (style === "place") {
     o.flipper.rotation.y = 0;
@@ -853,6 +855,7 @@ async function orbitClassroom() {
 
 async function showFinale() {
   endTension();
+  boostGroove(2500, .36);
   veil(false, 300);
   const orbit = orbitClassroom();
   const keys = [...realSeatPositions].sort((a, b) => seatXZ(a).z - seatXZ(b).z);
