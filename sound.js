@@ -10,9 +10,12 @@ const BGM_FILES = { main: "media/bgm_main.m4a", tension: "media/bgm_tension.m4a"
 const BGM_FADE = 1.25;
 const BGM_VOLUME = { main: .36, tension: .44, finale: .6 };
 const HOME_BGM_VOLUME = .2;
+const MC_BGM_PEAK = .64;
+const MC_BGM_ATTACK = .045;
+const MC_BGM_SETTLE = 3.4;
 const SFX_VOLUME = .85;     // 効果音全体の音量 (BGM とのバランス)
 const MC_RISE_SECONDS = 1.10;
-const BGM = { files: new Map(), request: null, playing: null };
+const BGM = { files: new Map(), main: null, request: null, playing: null };
 
 // iPad / iPhone のマナーモードでも鳴らす (Safari 16.4+)
 try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch {}
@@ -104,6 +107,7 @@ function buildMcTransitionSounds(ctx) {
   const rate = ctx.sampleRate;
   const rise = ctx.createBuffer(1, Math.round(rate * MC_RISE_SECONDS), rate);
   const hit = ctx.createBuffer(1, Math.round(rate * .52), rate);
+  const foot = ctx.createBuffer(1, Math.round(rate * .48), rate);
   const ramp = rise.getChannelData(0), strike = hit.getChannelData(0);
   let low = 0, bright = 0, phase = 0;
   let seed = 404;
@@ -129,7 +133,23 @@ function buildMcTransitionSounds(ctx) {
     strike[i] = envelope * (Math.sin(phase) * .61 * Math.exp(-t * 14) +
       (white - low) * .40 * Math.exp(-t * 8));
   }
-  return { rise, hit };
+  const footfall = foot.getChannelData(0);
+  let tap = 0, rumblePhase = 0;
+  for (let i = 0; i < footfall.length; i++) {
+    const t = i / rate;
+    const white = noise();
+    tap += .39 * (white - tap);
+    rumblePhase += 2 * Math.PI * (66 + 65 * Math.exp(-45 * t)) / rate;
+    const attack = Math.min(1, t / .003);
+    footfall[i] = attack * (.57 * Math.sin(rumblePhase) * Math.exp(-29 * t) +
+      .57 * (white - tap) * Math.exp(-66 * t) + .17 * Math.sin(2 * Math.PI * 780 * t) * Math.exp(-43 * t));
+  }
+  // 硬い床の反射と、短く残る教室の響き。
+  for (const [delay, gain] of [[.045, .32], [.081, .24], [.132, .19], [.188, .13], [.259, .09]]) {
+    const offset = Math.round(delay * rate);
+    for (let i = footfall.length - 1; i >= offset; i--) footfall[i] += footfall[i - offset] * gain;
+  }
+  return { rise, hit, foot };
 }
 
 function mcTransitionSfx(name, options) {
@@ -152,12 +172,21 @@ function loadBgm(name) {
   return BGM.files.get(name);
 }
 
+async function bgmPrepareMain() {
+  if (!SND.ctx || BGM.main) return;
+  try {
+    BGM.main = await SND.ctx.decodeAudioData((await loadBgm("main")).slice(0));
+  } catch {
+    BGM.files.delete("main");
+  }
+}
+
 function bgmPreload() {
   if (!SND.music) return;
   for (const name of ["tension", "finale"]) loadBgm(name).catch(() => {});
 }
 
-async function bgm(name, level = BGM_VOLUME[name]) {
+async function bgm(name, level = BGM_VOLUME[name], cue = null) {
   if (!SND.music || !Object.hasOwn(BGM_FILES, name)) return;
   if (BGM.request?.name === name) {
     if (BGM.request.level !== level) {
@@ -166,7 +195,7 @@ async function bgm(name, level = BGM_VOLUME[name]) {
     }
     return;
   }
-  const request = { name, level };
+  const request = { name, level, cue };
   BGM.request = request;
   if (BGM.playing?.name === name) {
     rampBgm(BGM.playing, level, BGM_FADE);
@@ -174,9 +203,7 @@ async function bgm(name, level = BGM_VOLUME[name]) {
   }
   const ctx = SND.ctx;
   try {
-    const data = await loadBgm(name);
-    if (BGM.request !== request) return;
-    const buffer = await ctx.decodeAudioData(data.slice(0));
+    const buffer = name === "main" && BGM.main ? BGM.main : await ctx.decodeAudioData((await loadBgm(name)).slice(0));
     if (BGM.request !== request) return;
 
     const src = ctx.createBufferSource();
@@ -186,9 +213,18 @@ async function bgm(name, level = BGM_VOLUME[name]) {
     src.connect(gain).connect(SND.music);
     src.onended = () => { src.disconnect(); gain.disconnect(); };
     const now = ctx.currentTime;
-    const track = { name, src, gain, from: 0, to: 0, started: now, duration: 0 };
-    rampBgm(track, request.level, BGM_FADE);
-    src.start(now);
+    const start = Math.max(now, cue ?? now);
+    const track = { name, src, gain, from: 0, to: 0, started: start, duration: 0 };
+    if (cue !== null) {
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(MC_BGM_PEAK, start + MC_BGM_ATTACK);
+      gain.gain.linearRampToValueAtTime(request.level, start + MC_BGM_SETTLE);
+      track.introPeak = start + MC_BGM_ATTACK;
+      Object.assign(track, { from: MC_BGM_PEAK, to: request.level, started: track.introPeak, duration: MC_BGM_SETTLE - MC_BGM_ATTACK });
+    } else {
+      rampBgm(track, request.level, BGM_FADE);
+    }
+    src.start(start);
     fadeOutBgm(BGM.playing, BGM_FADE);
     BGM.playing = track;
   } catch {
@@ -201,12 +237,15 @@ async function bgm(name, level = BGM_VOLUME[name]) {
 
 function rampBgm(track, target, duration) {
   const now = SND.ctx.currentTime;
-  const t = track.duration ? Math.min(1, (now - track.started) / track.duration) : 1;
-  const level = track.from + (track.to - track.from) * t;
+  const t = track.duration ? Math.min(1, Math.max(0, (now - track.started) / track.duration)) : 1;
+  const level = track.introPeak > now
+    ? MC_BGM_PEAK * Math.max(0, 1 - (track.introPeak - now) / MC_BGM_ATTACK)
+    : track.from + (track.to - track.from) * t;
   const volume = track.gain.gain;
   volume.cancelScheduledValues(now);
   volume.setValueAtTime(level, now);
   volume.linearRampToValueAtTime(target, now + duration);
+  track.introPeak = null;
   Object.assign(track, { from: level, to: target, started: now, duration });
 }
 
@@ -218,6 +257,19 @@ function fadeOutBgm(track, fade) {
 
 function bgmHome() {
   bgm("main", HOME_BGM_VOLUME);
+}
+
+function cueMcBgm(at) {
+  fadeOutBgm(BGM.playing, .20);
+  BGM.playing = BGM.request = null;
+  return bgm("main", BGM_VOLUME.main, at);
+}
+
+function cancelMcBgmCue() {
+  if (BGM.request?.cue == null || BGM.request.cue <= SND.ctx.currentTime) return;
+  BGM.request = null;
+  BGM.playing?.src.stop();
+  BGM.playing = null;
 }
 
 function bgmDuck(ducked, level = 0) {
