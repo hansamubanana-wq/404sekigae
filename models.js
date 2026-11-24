@@ -150,37 +150,26 @@ async function catDelivery(card, key, coat) {
   const start = x + side * SX * hops;
   const level = DESK_SURFACE_Y + .008;
   const lane = z - .23;
+  // 座席表の画角のまま、通り道の浮いた名札だけをよけて猫の足元を見せる。
+  const routePlates = Array.from({ length: hops + 1 }, (_, i) => {
+    const pivot = V.seat[`${row}-${col + side * i}`].pivot;
+    return { pivot, visible: pivot.visible };
+  });
   const cat = stageActor(buildCat, coat);
   V.scene.add(cat);
-  cat.visible = false;
   cat.scale.setScalar(.58);
   cat.position.set(hops ? start : x + side * .18, level, lane);
   cat.rotation.y = dir > 0 ? 0 : Math.PI;
   const motion = cat.userData;
-  const aim = v3();
-  const eye = v3();
-  const view = new THREE.Matrix4();
-  const yaw = Math.atan2(dir * .53, -1);
-  const carryTurn = new THREE.Quaternion().setFromAxisAngle(v3(0, 1, 0), yaw);
   const pitchAxis = v3(1);
-  const gripTurn = new THREE.Quaternion(), worldTurn = new THREE.Quaternion();
+  const worldTurn = new THREE.Quaternion();
   const gripOffset = v3(), grip = v3(), contact = v3();
   const scale = .31;
   const halfCardHeight = (FACE_H + .14) / 2;
   const contactTilt = -Math.PI / 2 + .078;
   let tilt = -.27;
-  const cameraAt = (pos, quat) => {
-    const { aspect, fov } = V.camera;
-    const halfFov = Math.tan(THREE.MathUtils.degToRad(fov / 2));
-    const distance = Math.max(2.85, .76 / (halfFov * Math.min(aspect, 1) * .83));
-    const depth = Math.min(3.25, distance * .60);
-    const lateral = dir * depth * .53;
-    aim.set(cat.position.x + dir * .07, .74, z - .07);
-    pos.set(aim.x + lateral, aim.y + Math.sqrt(distance ** 2 - depth ** 2 - lateral ** 2), aim.z - depth);
-    quat.setFromRotationMatrix(view.lookAt(pos, aim, V.camera.up));
-  };
   const positionCard = (anchor, edge) => {
-    worldTurn.copy(carryTurn).multiply(gripTurn.setFromAxisAngle(pitchAxis, tilt));
+    worldTurn.setFromAxisAngle(pitchAxis, tilt);
     gripOffset.set(0, edge * scale * halfCardHeight, 0).applyQuaternion(worldTurn).add(anchor);
     card.position.copy(V.stage.worldToLocal(gripOffset));
     card.quaternion.copy(V.stage.quaternion).invert().multiply(worldTurn);
@@ -190,25 +179,13 @@ async function catDelivery(card, key, coat) {
     const ms = 72 + Math.abs(end - from) * 220;
     motion.run = true;
     sfx("step", { vol: .19, rate: 1.65, vary: .13 });
-    await tween(ms, t => {
-      cat.position.x = lerp(from, end, t);
-      cameraAt(CAM.pos, CAM.quat);
-    }, ease.linear);
+    await tween(ms, t => { cat.position.x = lerp(from, end, t); }, ease.linear);
     motion.run = false;
   };
 
-  let stopFollowing, resize;
+  let stopFollowing;
   try {
-    const shot = { pos: eye, quat: new THREE.Quaternion() };
-    cameraAt(shot.pos, shot.quat);
-    await camGo(shot, 290);
-    cameraAt(CAM.pos, CAM.quat);
-    resize = () => {
-      cameraAt(CAM.pos, CAM.quat);
-      V.camRig();
-    };
-    addEventListener("resize", resize);
-    cat.visible = true;
+    for (const { pivot } of routePlates) pivot.visible = false;
     card.scale.setScalar(scale);
     positionCard(motion.mouth.getWorldPosition(grip), -1);
     card.visible = true;
@@ -232,7 +209,6 @@ async function catDelivery(card, key, coat) {
       await tween(205, t => {
         motion.jump = Math.sin(t * Math.PI);
         cat.position.set(lerp(takeoff, touchdown, t), level + .23 * motion.jump, lane);
-        cameraAt(CAM.pos, CAM.quat);
       }, ease.linear);
       motion.jump = 0;
     }
@@ -252,35 +228,19 @@ async function catDelivery(card, key, coat) {
     }, ease.inOut);
   } finally {
     stopFollowing?.();
-    if (resize) removeEventListener("resize", resize);
     cat.userData.remove();
+    for (const { pivot, visible } of routePlates) pivot.visible = visible;
   }
 }
 
 async function deliverCatCards(list, cards) {
   const coats = shuffleArray(CAT_COATS);
-  const hiddenFaces = [...hidden].map(key => V.seat[key].front);
-  const desktop = V.deskParts.top.material;
-  const roughness = desktop.roughness;
-  desktop.roughness = .54;
-  // 教室の反対側から見るカットなので、裏返した未発表の名前は見えないようにする。
-  for (const face of hiddenFaces) face.visible = false;
   cards.forEach(card => { card.visible = false; });
-  try {
-    for (let i = 0; i < list.length; i++) {
-      const { s, key } = list[i];
-      await catDelivery(cards[i], key, coats[i]);
-      cards[i].visible = false;
-      V.seat[key].front.visible = true;
-      await land(s, key, "place");
-    }
-  } finally {
-    try {
-      await camHome(400);
-    } finally {
-      desktop.roughness = roughness;
-      for (const face of hiddenFaces) face.visible = true;
-    }
+  for (let i = 0; i < list.length; i++) {
+    const { s, key } = list[i];
+    await catDelivery(cards[i], key, coats[i]);
+    cards[i].visible = false;
+    await land(s, key, "place");
   }
 }
 

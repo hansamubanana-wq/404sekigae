@@ -218,10 +218,10 @@ function aimMcMic(host) {
   host.mic.quaternion.setFromUnitVectors(host.up, host.axis);
 }
 
-function poseMc(host, t, distance, walking, voice, cameraAngle = 0, musicHit = 0, musicMic = 0) {
+function poseMc(host, t, distance, walking, voice, cameraAngle = 0, musicHit = 0, musicMic = 0, anticipation = 0, scan = 0) {
   const phase = distance * Math.PI * 2 / 1.16;
   const sway = walking * Math.sin(phase);
-  host.body.position.y = .033 * walking * Math.abs(Math.sin(phase)) + .008 * Math.sin(t * 4);
+  host.body.position.y = .033 * walking * Math.abs(Math.sin(phase)) + .008 * Math.sin(t * 4) + .025 * anticipation;
   host.body.rotation.z = sway * .045;
   host.legs.forEach(({ hip, knee, foot }, i) => {
     const stride = phase + i * Math.PI;
@@ -237,7 +237,7 @@ function poseMc(host, t, distance, walking, voice, cameraAngle = 0, musicHit = 0
     (1 - ease.inOut(clamp01((t - (MC_SUBTITLE_OUT - .28)) / .74)));
   const speaking = Math.max(musicMic, ease.out(clamp01(t / .22)) * (1 - ease.inOut(clamp01((t - MC_SUBTITLE_OUT) / .52))));
   const side = Math.max(welcome, reveal, fist);
-  placeMcArm(host, host.arms[0], lerp(-.339,-.155,speaking), lerp(.84,1.443,speaking), lerp(.03 + sway * .16,.36,speaking));
+  placeMcArm(host, host.arms[0], lerp(-.339,-.155,speaking), lerp(.84,1.443,speaking) - .10 * anticipation, lerp(.03 + sway * .16,.36,speaking));
   placeMcArm(host, host.arms[1], lerp(.351,.665,side) - .12 * fist, .84 + .375 * welcome + .815 * fist + .388 * reveal,
     .02 - sway * .16 + .11 * welcome + .08 * fist + .28 * reveal);
   const free = host.arms[1];
@@ -246,7 +246,8 @@ function poseMc(host, t, distance, walking, voice, cameraAngle = 0, musicHit = 0
   aimMcMic(host);
 
   const glance = walking * THREE.MathUtils.clamp(cameraAngle * .72, -.69, .65);
-  host.head.rotation.set(-.031 * voice - .050 * fist, glance - .09 * reveal, .07 * welcome + sway * .034 - .08 * fist);
+  host.head.rotation.set(-.031 * voice - .050 * fist - .055 * anticipation,
+    glance - .09 * reveal + .22 * anticipation * scan, .07 * welcome + sway * .034 - .08 * fist);
   const blinkPhase = Math.min(Math.abs(t - .85), Math.abs(t - 3.31), Math.abs(t - 5.67), Math.abs(t - 7.90), Math.abs(t - 10.72), Math.abs(t - 12.40));
   const blink = clamp01(blinkPhase / .082);
   for (const { eye, brow, side: eyeSide } of host.eyes) {
