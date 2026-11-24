@@ -214,7 +214,7 @@ async function bgm(name, level = BGM_VOLUME[name], cue = null) {
     src.onended = () => { src.disconnect(); gain.disconnect(); };
     const now = ctx.currentTime;
     const start = Math.max(now, cue ?? now);
-    const track = { name, src, gain, from: 0, to: 0, started: start, duration: 0 };
+    const track = { name, src, gain, playbackStart: start, from: 0, to: 0, started: start, duration: 0 };
     if (cue !== null) {
       gain.gain.setValueAtTime(0, start);
       gain.gain.linearRampToValueAtTime(MC_BGM_PEAK, start + MC_BGM_ATTACK);
