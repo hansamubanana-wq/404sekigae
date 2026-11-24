@@ -1144,8 +1144,11 @@ function frame(now) {
     o.pivot.position.x = o.base.x + (o.rippleX || 0);
     o.pivot.position.y = o.base.y + Math.sin(t * 1.3 + o.phase) * .03 + (o.jump || 0) + (o.rippleY || 0);
     o.pivot.position.z = o.base.z + (o.rippleZ || 0);
-    if (o.catPlateOffset) o.pivot.position.add(o.catPlateOffset);
-    if (V.billboard) o.pivot.quaternion.copy(V.camera.quaternion);
+    if (o.catPlacement) {
+      o.pivot.position.copy(o.catPlacement.position);
+      o.pivot.quaternion.copy(o.catPlacement.rotation);
+      o.pivot.scale.setScalar(o.catPlacement.scale);
+    } else if (V.billboard) o.pivot.quaternion.copy(V.camera.quaternion);
   }
 
   if (V.onFrame) for (const f of V.onFrame) f(dt, t);
