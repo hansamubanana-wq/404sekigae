@@ -11,6 +11,7 @@ const MC_SUBTITLE_OUT = 13.28;
 const MC_RISE_AT = 12.68;
 const MC_END = 13.34;
 const MC_WALK_END = 4.14;
+const USE_QUATERNIUS_MC = true;
 const MC_STEP_INTERVAL = .65;
 const MC_SOLE_AT = .052;
 const MC_STEP_COUNT = 6;
@@ -96,9 +97,9 @@ async function decodeMcVoice(ctx, path) {
 
 async function loadMcHost() {
   const ctx = SND.ctx;
-  const [voice, { mergeGeometries }, reactions, musicCall, thanks] = await Promise.all([
+  const [voice, host, reactions, musicCall, thanks] = await Promise.all([
     decodeMcVoice(ctx, "media/mc/voice.m4a"),
-    import("three/addons/utils/BufferGeometryUtils.js"),
+    loadMcActor(),
     Promise.all(Object.keys(MC_REACTIONS).map(async name =>
       [name, await decodeMcVoice(ctx, `media/mc/react/${name}.m4a`)]
     )).then(Object.fromEntries),
@@ -106,7 +107,6 @@ async function loadMcHost() {
     decodeMcVoice(ctx, "media/mc/thanks.m4a"),
     document.fonts.load('900 32px "MC Noto Sans"', "MC" + MC_THANKS_CAPTION + MC_MUSIC_CAPTION + MC_LINES.map(line => line.text).join("")),
   ]);
-  const host = buildMcModel(mergeGeometries);
   host.voice = voice;
   host.musicCall = musicCall;
   host.thanks = thanks;
@@ -116,7 +116,6 @@ async function loadMcHost() {
     host.reactionMeter.fftSize = 256;
     host.reactionWave = new Float32Array(host.reactionMeter.fftSize);
   }
-  host.armRotation = new THREE.Quaternion();
   // 教卓の幅は3.4。左端の外を通って黒板側へ回り、最後は生徒側を向く。
   host.path = new THREE.CatmullRomCurve3([
     v3(-2.84, 0, PODIUM_Z - .39),
@@ -124,18 +123,35 @@ async function loadMcHost() {
     v3(-1.80, 0, PODIUM_Z - 1.17),
     v3(-.14, 0, PODIUM_Z - 1.20),
   ]);
-  host.routeLength = host.path.getLength();
-  for (const [index, leg] of host.legs.entries()) {
-    leg.marks = [mcFootMark(host, leg.side, 0, 0)];
-    for (let step = index + 1; step <= MC_STEP_COUNT; step += 2) {
-      const at = step * MC_STEP_INTERVAL;
-      const pace = step >= MC_STEP_COUNT - 1 ? 1 : clamp01(mcWalkPace(at) + .16 / host.routeLength);
-      leg.marks.push(mcFootMark(host, leg.side, at, pace));
+  if (host.mixer) {
+    prepareMcSuitWalk(host);
+    moveMcSuit(host, MC_WALK_END);
+    poseMcSuit(host, MC_WALK_END, 0);
+  } else {
+    host.armRotation = new THREE.Quaternion();
+    const length = host.path.getLength();
+    for (const [index, leg] of host.legs.entries()) {
+      leg.marks = [mcFootMark(host, leg.side, 0, 0)];
+      for (let step = index + 1; step <= MC_STEP_COUNT; step += 2) {
+        const at = step * MC_STEP_INTERVAL;
+        const pace = step >= MC_STEP_COUNT - 1 ? 1 : clamp01(mcWalkPace(at) + .16 / length);
+        leg.marks.push(mcFootMark(host, leg.side, at, pace));
+      }
+    }
+    host.path.getPointAt(1, host.actor.position);
+    poseMc(host, 0, MC_WALK_END, 0, 0);
+  }
+  return host;
+}
+
+async function loadMcActor() {
+  if (USE_QUATERNIUS_MC) {
+    try { return await loadMcSuit(); } catch (error) {
+      console.warn("司会者のモデルを読み込めませんでした", error);
     }
   }
-  host.path.getPointAt(1, host.actor.position);
-  poseMc(host, 0, MC_WALK_END, 0, 0);
-  return host;
+  const { mergeGeometries } = await import("three/addons/utils/BufferGeometryUtils.js");
+  return buildMcModel(mergeGeometries);
 }
 
 function mcWalkPace(t) {
@@ -200,7 +216,9 @@ function updateMcShow(dt, t) {
   const gesture = speaking
     ? ease.out(clamp01(elapsed / .14)) * ease.out(clamp01((reaction.source.buffer.duration - elapsed) / .21))
     : 0;
-  if (host.actor.visible) poseMcWaiting(host, t, mcShow.voiceLevel, gesture, !!reaction?.strong);
+  if (!host.actor.visible) return;
+  if (host.mixer) poseMcSuit(host, MC_WALK_END, t, Math.max(0, elapsed) * 1.3, gesture * (reaction?.strong ? .95 : .66));
+  else poseMcWaiting(host, t, mcShow.voiceLevel, gesture, !!reaction?.strong);
 }
 
 function mcSeatLanded(key) {
@@ -265,7 +283,7 @@ function endMcShow() {
 }
 
 async function warmUpMc(host) {
-  const expressions = [host.smile, host.arms[1].open];
+  const expressions = host.mixer ? [] : [host.smile, host.arms[1].open];
   const visibility = expressions.map(mesh => mesh.visible);
   for (const mesh of expressions) mesh.visible = true;
   V.scene.add(host.actor);
@@ -415,11 +433,14 @@ async function playMcIntro(unlocked) {
     const nextLine = cues.findLastIndex(cue => t >= cue.at);
     const lead = (cues[nextLine + 1]?.at ?? Infinity) - t;
     const anticipation = withMusicCall && t >= MC_WALK_END && lead < .9 ? Math.sin(Math.PI * lead / .9) : 0;
-    const pace = mcWalkPace(t);
-    host.path.getPointAt(pace, host.actor.position);
-    host.path.getTangentAt(pace, heading);
-    const turn = ease.inOut(clamp01((t - 3.12) / 1.02));
-    host.actor.rotation.y = lerp(Math.atan2(heading.x, heading.z), 0, turn);
+    if (host.mixer) moveMcSuit(host, t);
+    else {
+      const pace = mcWalkPace(t);
+      host.path.getPointAt(pace, host.actor.position);
+      host.path.getTangentAt(pace, heading);
+      const turn = ease.inOut(clamp01((t - 3.12) / 1.02));
+      host.actor.rotation.y = lerp(Math.atan2(heading.x, heading.z), 0, turn);
+    }
     const walking = (1 - ease.out(clamp01((t - 3.90) / .24))) * clamp01(t / .28);
     const musicTime = musicTrack ? audioNow - musicTrack.playbackStart - mcBeatOffsetSeconds : -Infinity;
     const musicHit = musicTrack ? ease.out(clamp01((musicTime + .18) / .25)) *
@@ -438,9 +459,15 @@ async function playMcIntro(unlocked) {
     const speaking = inSpeech ? mcVoiceLevel(meter, wave) : 0;
     voiceLevel = lerp(voiceLevel, speaking, .47);
     const wide = mcCamera(rig, host.actor, t, dialogue, short, offset, musicHit, anticipation, musicWide, sway, pulse);
-    const angle = Math.atan2(camera.position.x - host.actor.position.x, camera.position.z - host.actor.position.z) - host.actor.rotation.y;
-    poseMc(host, dialogue, Math.min(t, MC_WALK_END), walking, voiceLevel, Math.atan2(Math.sin(angle), Math.cos(angle)),
-      musicHit, musicMic, anticipation, Math.sin(t * 2.8));
+    if (host.mixer) {
+      const gestureTime = Math.max(0, t - (cues[line]?.at ?? t));
+      const speakingGesture = voiceLevel * ease.out(clamp01((1.5 - gestureTime) / .35));
+      poseMcSuit(host, t, t, musicHit > .25 ? .7 : gestureTime * 1.2, Math.max(speakingGesture * .55, musicHit));
+    } else {
+      const angle = Math.atan2(camera.position.x - host.actor.position.x, camera.position.z - host.actor.position.z) - host.actor.rotation.y;
+      poseMc(host, dialogue, Math.min(t, MC_WALK_END), walking, voiceLevel, Math.atan2(Math.sin(angle), Math.cos(angle)),
+        musicHit, musicMic, anticipation, Math.sin(t * 2.8));
+    }
     V.spotFocusAt.copy(host.actor.position);
     V.spotFocus = .43 * (1 - wide);
     V.spotPower = lerp(spotPower * .32, spotPower, wide);
@@ -484,7 +511,7 @@ async function playMcIntro(unlocked) {
     });
     if (!short) {
       for (let step = 1; step <= MC_STEP_COUNT; step++) {
-        const left = step % 2 === 1;
+        const left = step % 2 === (host.mixer ? 0 : 1);
         footsteps.push(mcFootstep(step - 1, {
           at: start + step * MC_STEP_INTERVAL,
           vol: (left ? .88 : .80) * rand(.94, 1.06),
