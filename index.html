@@ -61,7 +61,7 @@
     <button class="icon" id="printBtn" onclick="window.print()" title="印刷" aria-label="印刷">
       <svg viewBox="0 0 24 24"><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v7H6z"/></svg>
     </button>
-    <button class="start" id="shuffleBtn" onclick="shuffleSeats()"><span class="tri"></span>席替えスタート</button>
+    <button class="start" id="shuffleBtn" onclick="shuffleSeats()" disabled><span class="tri"></span>席替えスタート</button>
   </div>
 </header>
 
@@ -74,7 +74,11 @@
   <ul id="seatHistoryList"></ul>
 </dialog>
 
-<div class="loading" id="loading"><div class="ring"></div><div class="load-text">準備中…</div></div>
+<div class="loading" id="loading">
+  <div class="ring" aria-hidden="true"></div>
+  <div class="load-text" id="loadStage" role="status">1 / 5　教室とフォントを準備</div>
+  <progress id="loadProgress" max="5" value="0" aria-label="読み込み進捗"></progress>
+</div>
 
 <main class="sheet-wrap">
   <div class="sheet-desk">教卓</div>

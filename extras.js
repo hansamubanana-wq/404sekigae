@@ -12,17 +12,22 @@ function jumpSeat(key, h = .35, ms = 500) {
   return tween(ms, t => { o.jump = Math.sin(t * Math.PI) * h * (1 - t * .3); }, ease.linear).then(() => { o.jump = 0; });
 }
 
+function buildShockwave() {
+  return new THREE.Mesh(new THREE.RingGeometry(.8, 1, 64), new THREE.MeshBasicMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  }));
+}
+
 // 床に広がる光の輪 (ワールド座標)
 function shockwave(key, color, size = 5) {
   const { x, z } = seatXZ(key);
-  const m = new THREE.Mesh(new THREE.RingGeometry(.8, 1, 64), new THREE.MeshBasicMaterial({
-    color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-  }));
+  const m = stageActor(buildShockwave);
+  m.material.color.copy(color);
   m.rotation.x = -Math.PI / 2;
   m.position.set(x, .05, z);
   V.scene.add(m);
   return tween(800, t => { m.scale.setScalar(.3 + t * size); m.material.opacity = 1 - t; }, ease.out)
-    .then(() => { V.scene.remove(m); m.geometry.dispose(); m.material.dispose(); });
+    .finally(() => m.userData.remove());
 }
 
 // 着地の衝撃: 揺れ + 輪 + 周りの席が跳ねる
@@ -40,8 +45,10 @@ function impact(key, s, power = 1) {
 }
 
 // 火の粉の尾
+const FIRE_TRAIL_OPTIONS = { life: .5, size: .12, grav: -1.5 };
 function fireTrail(pos, n = 6) {
-  burst(pos, [hdr(0xffb020, 3), hdr(0xff5a1f, 2.5), hdr(0xffe08a, 3)], n, .8, { life: .5, size: .12, grav: -1.5 });
+  V.fireTrailColors ||= [hdr(0xffb020, 3), hdr(0xff5a1f, 2.5), hdr(0xffe08a, 3)];
+  burst(pos, V.fireTrailColors, n, .8, FIRE_TRAIL_OPTIONS);
 }
 
 function letterbox(on) { document.body.classList.toggle("letterbox", on); }

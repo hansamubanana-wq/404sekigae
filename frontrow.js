@@ -23,6 +23,7 @@ const FRONT_ROW = {
 };
 
 let FR = null;
+let frontRowSource = FRONT_ROW.src;
 const frontRowDebug = new URLSearchParams(location.search).has("debug");
 
 function frontRowDom() {
@@ -83,8 +84,45 @@ function placeFrontRowLate(order) {
 function frontRowPreload() {
   const v = frontRowDom().video;
   v.preload = "auto";
-  if (v.getAttribute("src") !== FRONT_ROW.src) v.src = FRONT_ROW.src;
+  if (v.getAttribute("src") !== frontRowSource) v.src = frontRowSource;
   return v;
+}
+
+// iPad が preload を抑える場合も、動画のデータ自体は発表前に端末へ置く。
+async function frontRowPrepare() {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FRONT_ROW.waitTimeout);
+  try {
+    const response = await fetch(FRONT_ROW.src, { signal: controller.signal });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    frontRowSource = URL.createObjectURL(await response.blob());
+  } catch (error) {
+    frontRowReport("事前の動画取得に失敗", error);
+  } finally {
+    clearTimeout(timer);
+  }
+  const video = frontRowPreload();
+  if (video.readyState >= 2) return;
+  await new Promise(resolve => {
+    const loaded = () => {
+      clearTimeout(wait);
+      video.removeEventListener("loadeddata", loaded);
+      video.removeEventListener("error", loaded);
+      resolve();
+    };
+    const wait = setTimeout(loaded, 1600);
+    video.addEventListener("loadeddata", loaded);
+    video.addEventListener("error", loaded);
+  });
+  if (video.error) frontRowUseNetwork();
+}
+
+function frontRowUseNetwork() {
+  if (frontRowSource === FRONT_ROW.src) return;
+  const previous = frontRowSource;
+  frontRowSource = FRONT_ROW.src;
+  frontRowPreload();
+  URL.revokeObjectURL(previous);
 }
 
 // 席替えスタートのボタンを押した瞬間 (ユーザー操作の中) に呼ぶ。
@@ -252,6 +290,7 @@ function playFrontRow(student) {
       d.panel.hidden = true;
       waitForPlayback();
       try {
+        if (byTap && v.error) frontRowUseNetwork();
         if (byTap && (v.error || (v.readyState < 2 && v.currentTime === 0))) v.load();
         v.muted = false;
         // 再試行はタップのハンドラー内で直接呼ぶ。ブラウザの音付き再生許可を使うため。

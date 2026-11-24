@@ -8,6 +8,7 @@ let seats = createInitialSeats();
 let locked = new Set();
 let hidden = new Set();   // 発表待ちの席
 let busy = false;
+let canStartShuffle = false;
 let seatMode = null;
 const selectedSeats = new Set();
 let replayScope = null;
@@ -199,7 +200,7 @@ function setBusy(state) {
   document.getElementById("historyBtn").hidden = state;
   if (state) document.getElementById("seatHistory").close();
   ["shuffleBtn", "saveBtn", "resetBtn", "printBtn"].forEach(id => {
-    document.getElementById(id).disabled = state;
+    document.getElementById(id).disabled = state || (id === "shuffleBtn" && !canStartShuffle);
   });
   document.body.classList.toggle("busy", state);
   updateStatus();
@@ -338,7 +339,7 @@ async function swapSeats(key, other) {
 
 /* ---------- 席替え ---------- */
 async function shuffleSeats(scope = null) {
-  if (busy) return;
+  if (busy || !canStartShuffle) return;
   const movable = realSeatPositions.filter(pos => !locked.has(pos) && (!scope || scope.has(pos)));
   if (movable.length < (scope ? 2 : 1)) return;
   setSeatMode(null);
@@ -366,7 +367,6 @@ async function shuffleSeats(scope = null) {
     bgm("main");
     beginMcShow();
     await showStart(movable, mc ?? undefined);
-    bgmPreload();
     updateStatus();
     const order = placeFrontRowLate(shuffleArray(movable));   // 最前列中央は最後の3人の中に
     const rounds = makeRounds(order);                           // 2人ずつの組 (最後は「最前列中央 + 2人」か「最後の1人」)
@@ -451,29 +451,42 @@ addEventListener("DOMContentLoaded", () => {
   });
   document.getElementById("historyBtn").addEventListener("click", openSeatHistory);
   renderSheet();
-  // 起動時に重い準備を全部済ませる (本番中に止まらないように)。ローディングは長くなってよい
-  initWorld()
+  const stage = (number, text) => {
+    document.getElementById("loadStage").textContent = `${number} / 5　${text}`;
+    document.getElementById("loadProgress").value = number - 1;
+    return nextLoadingFrame();
+  };
+  const soundReady = soundInit();
+  const musicReady = bgmPrepare();
+  const videoReady = frontRowPrepare();
+  initWorld(() => stage(2, "名札と文字を準備"))
     .then(async () => {
-      const soundReady = soundInit();
-      const mainReady = bgmPrepareMain();
       const mc = loadMcHost().catch(error => {
         console.warn("司会者の素材を準備できませんでした", error);
         return null;
       });
-      try { await warmUpShaders(); } catch (e) { console.warn(e); }
-      try { frontRowPreload(); } catch {}
-      await Promise.race([Promise.all([soundReady, mainReady]), sleep(10000)]);
-      const host = await Promise.race([mc, sleep(10000)]);
+      await stage(3, "3D演出を準備");
+      await warmUpShaders().catch(error => console.warn("演出の準備", error));
+      const host = await mc;
       if (host) {
         try { await warmUpMc(host); } catch (error) { console.warn("司会者の描画を準備できませんでした", error); }
       }
+      await stage(4, "BGMと効果音を準備");
+      await Promise.allSettled([soundReady, musicReady]);
+      await stage(5, "最前列の動画を準備");
+      await videoReady;
+      document.getElementById("loadStage").textContent = "準備完了";
+      document.getElementById("loadProgress").value = 5;
       V.renderer.setAnimationLoop(frame);
       document.body.classList.add("ready");
-      updateSeatTools();
     })
     .catch(e => {
       console.error(e);
       document.body.classList.add("fallback");
+    })
+    .finally(() => {
+      canStartShuffle = true;
+      document.getElementById("shuffleBtn").disabled = busy;
       updateSeatTools();
     });
 });

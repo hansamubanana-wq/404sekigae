@@ -285,6 +285,37 @@ const pendingExcept = list => [...hidden].filter(k => !list.some(x => x.key === 
    登場: 名前カードを画面の真ん中に大きく出す
    (呼ばれた時点でカードは見えない状態。終わったら定位置・表向き・大きさ k)
    ========================================================= */
+function buildWarpTunnel() {
+  const geo = new THREE.BufferGeometry();
+  const count = 420;
+  geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(count * 6), 3).setUsage(THREE.DynamicDrawUsage));
+  const lines = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({
+    color: new THREE.Color(1.6, 1.8, 2.6), transparent: true,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  }));
+  lines.frustumCulled = false;
+  lines.userData.stars = new Float32Array(count * 3);
+  lines.userData.reset = () => { lines.material.opacity = 1; };
+  return lines;
+}
+
+function buildCurtains() {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ map: V.tex.curtain, roughness: .7 });
+  const left = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
+  const top = new THREE.Mesh(new THREE.BoxGeometry(1, .7, .3), new THREE.MeshStandardMaterial({ color: 0xc8901c, metalness: 1, roughness: .3 }));
+  group.add(left, left.clone(), top);
+  return group;
+}
+
+function buildTeleportPillar() {
+  return new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({
+    map: V.tex.glow, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  }));
+}
+
+function buildRiseBeam() { return beamMesh(0xfff2cc, 0); }
+
 const INTRO2 = {
   // ジャイロリング: 傾いた輪が回り、奥から名前が現れる。
   async gyroscope(list, cards, k) {
@@ -465,63 +496,70 @@ const INTRO2 = {
 
   // ワープ: 光のトンネルから飛び出してくる
   async warp(list, cards, k) {
-    const N = 420, pos = new Float32Array(N * 6), st = [];
-    for (let i = 0; i < N; i++) {
+    const lines = stageActor(buildWarpTunnel);
+    const position = lines.geometry.attributes.position;
+    const pos = position.array, stars = lines.userData.stars;
+    for (let i = 0; i < stars.length; i += 3) {
       const a = Math.random() * 6.28, r = .6 + Math.pow(Math.random(), .6) * V.visW;
-      st.push({ x: Math.cos(a) * r, y: Math.sin(a) * r * .7, z: -Math.random() * 70 });
+      stars[i] = Math.cos(a) * r;
+      stars[i + 1] = Math.sin(a) * r * .7;
+      stars[i + 2] = -Math.random() * 70;
     }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    const lines = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: new THREE.Color(1.6, 1.8, 2.6), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
-    lines.frustumCulled = false;
-    V.stage.add(lines);
     let speed = 10;
     const un = addFrameHook(dt => {
-      for (let i = 0; i < N; i++) {
-        const p = st[i];
-        p.z += speed * dt;
-        if (p.z > 6) p.z -= 76;
-        const len = Math.min(18, speed * .06);
-        pos.set([p.x, p.y, p.z, p.x, p.y, p.z - len], i * 6);
+      const len = Math.min(18, speed * .06);
+      for (let i = 0, j = 0; i < stars.length; i += 3, j += 6) {
+        const z = stars[i + 2] + speed * dt;
+        stars[i + 2] = z > 6 ? z - 76 : z;
+        pos[j] = pos[j + 3] = stars[i];
+        pos[j + 1] = pos[j + 4] = stars[i + 1];
+        pos[j + 2] = stars[i + 2];
+        pos[j + 5] = stars[i + 2] - len;
       }
-      geo.attributes.position.needsUpdate = true;
+      position.needsUpdate = true;
     });
-    sfx("powerup", { rate: .7 }); sfx("ufo", { vol: .4, rate: 1.5 });
-    await tween(1500, t => { speed = 10 + t * t * 140; }, ease.linear);
-    const homes = cards.map(g => g.position.clone());
-    cards.forEach(g => { g.visible = true; g.scale.setScalar(k); });
-    await tween(500, t => { cards.forEach((g, i) => g.position.set(homes[i].x, homes[i].y, lerp(-60, 0, t))); speed = 150 * (1 - t) + 5; }, ease.out);
-    sfx("laser", { rate: .7 }); sfx("jingle_reveal", { vol: .8 });
-    cards.forEach((g, i) => revealBurst(g, list[i].s));
-    flashAt(v3(0, 0, .3), hdr(0x9fd8ff, 2), 8);
-    await tween(450, t => { lines.material.opacity = 1 - t; }, ease.out);
-    un(); V.stage.remove(lines); geo.dispose(); lines.material.dispose();
+    try {
+      sfx("powerup", { rate: .7 }); sfx("ufo", { vol: .4, rate: 1.5 });
+      await tween(1500, t => { speed = 10 + t * t * 140; }, ease.linear);
+      cards.forEach(g => { g.visible = true; g.scale.setScalar(k); });
+      await tween(500, t => { cards.forEach(g => { g.position.z = lerp(-60, 0, t); }); speed = 150 * (1 - t) + 5; }, ease.out);
+      sfx("laser", { rate: .7 }); sfx("jingle_reveal", { vol: .8 });
+      cards.forEach((g, i) => revealBurst(g, list[i].s));
+      flashAt(v3(0, 0, .3), hdr(0x9fd8ff, 2), 8);
+      await tween(450, t => { lines.material.opacity = 1 - t; }, ease.out);
+    } finally {
+      un();
+      lines.userData.remove();
+    }
   },
 
   // 幕開け: 赤い幕が閉じて、ドラムロールのあと開く
   async curtain(list, cards, k) {
     const W = V.visW + 2, H = V.visH + 2;
-    if (!V.tex.curtain) { V.tex.curtain = canvasTex(curtainCanvas()); }
-    const mat = new THREE.MeshStandardMaterial({ map: V.tex.curtain, roughness: .7 });
-    const L = new THREE.Mesh(new THREE.PlaneGeometry(W / 2 + .4, H), mat), Rr = L.clone();
-    const val = new THREE.Mesh(new THREE.BoxGeometry(W + 1, .7, .3), new THREE.MeshStandardMaterial({ color: 0xc8901c, metalness: 1, roughness: .3 }));
+    const curtain = stageActor(buildCurtains);
+    const [L, Rr, val] = curtain.children;
+    const width = W / 2 + .4;
+    L.scale.set(width, H, 1);
+    Rr.scale.copy(L.scale);
+    val.scale.x = W + 1;
     val.position.set(0, V.visH / 2 - .1, 1.3);
-    V.stage.add(L, Rr, val);
     L.position.set(-W * .8, 0, 1.2); Rr.position.set(W * .8, 0, 1.2);
-    sfx("cloth"); sfx("cloth", { delay: .1 });
-    await tween(450, t => { L.position.x = lerp(-W * .8, -W / 4, t); Rr.position.x = lerp(W * .8, W / 4, t); }, ease.out);
-    cards.forEach(g => { g.visible = true; g.scale.setScalar(k); });   // 幕が閉じてから置く
-    bubble("ドゥルルルル…", v3(0, V.visH * .25, 1.4), 1400);
-    await sleep(1400);
-    bubble("ジャーン！", v3(0, V.visH * .25, 1.4), 800);
-    sfx("cloth"); sfx("cloth", { delay: .15 });
-    await tween(800, t => {
-      L.position.x = lerp(-W / 4, -W * .75, t); Rr.position.x = lerp(W / 4, W * .75, t);
-      L.scale.x = Rr.scale.x = 1 - t * .5;
-    }, ease.inOut);
-    cards.forEach((g, i) => revealBurst(g, list[i].s));
-    V.stage.remove(L, Rr, val);
-    L.geometry.dispose(); mat.dispose(); val.geometry.dispose(); val.material.dispose();
+    try {
+      sfx("cloth"); sfx("cloth", { delay: .1 });
+      await tween(450, t => { L.position.x = lerp(-W * .8, -W / 4, t); Rr.position.x = lerp(W * .8, W / 4, t); }, ease.out);
+      cards.forEach(g => { g.visible = true; g.scale.setScalar(k); });   // 幕が閉じてから置く
+      bubble("ドゥルルルル…", v3(0, V.visH * .25, 1.4), 1400);
+      await sleep(1400);
+      bubble("ジャーン！", v3(0, V.visH * .25, 1.4), 800);
+      sfx("cloth"); sfx("cloth", { delay: .15 });
+      await tween(800, t => {
+        L.position.x = lerp(-W / 4, -W * .75, t); Rr.position.x = lerp(W / 4, W * .75, t);
+        L.scale.x = Rr.scale.x = width * (1 - t * .5);
+      }, ease.inOut);
+      cards.forEach((g, i) => revealBurst(g, list[i].s));
+    } finally {
+      curtain.userData.remove();
+    }
   },
 
   // ルーレット: 名前が高速で入れ替わり、1人ずつ止まる
@@ -785,19 +823,20 @@ const TRAVEL2 = {
       const P = plateLocal(key), p0 = g.position.clone(), s0 = g.scale.x;
       const sx = p0.x === 0 ? (P.x > 0 ? 1 : -1) : Math.sign(p0.x);
       const top = p0.clone().add(v3(sx * V.visW * .35, V.visH * .6, -6));
-      const path = t => t < .45 ? bez(p0, p0.clone().add(v3(0, V.visH * .5, 0)), top, t / .45) : bez(top, P.clone().add(v3(0, 4.5, 1.5)), P, (t - .45) / .55);
-      let prev = path(0);
-      const UPV = v3(0, 1, 0);
+      const climb = new THREE.QuadraticBezierCurve3(p0, p0.clone().add(v3(0, V.visH * .5, 0)), top);
+      const descent = new THREE.QuadraticBezierCurve3(top, P.clone().add(v3(0, 4.5, 1.5)), P);
+      const prev = p0.clone(), d = v3(), trail = v3(), UPV = v3(0, 1, 0), turn = new THREE.Quaternion();
       await tween(2200, t => {
-        const p = path(t), d = p.clone().sub(prev);
-        prev = p;
-        g.position.copy(p);
+        const p = t < .45 ? climb.getPoint(t / .45, g.position) : descent.getPoint((t - .45) / .55, g.position);
+        d.subVectors(p, prev);
+        prev.copy(p);
         g.scale.setScalar(lerp(s0 * .55, 1, t) * (t < .1 ? 1 + (1 - t / .1) * .8 : 1));
         if (d.lengthSq() > 1e-8) {
           const dir = d.normalize();
-          rk.quaternion.slerp(new THREE.Quaternion().setFromUnitVectors(UPV, dir), .35);
-          rk.position.copy(p).addScaledVector(dir, -(FACE_H * g.scale.x * .5 + .5)).add(v3(0, 0, -.2));
-          fireTrail(rk.position.clone().addScaledVector(dir, -.85), 4);
+          rk.quaternion.slerp(turn.setFromUnitVectors(UPV, dir), .35);
+          rk.position.copy(p).addScaledVector(dir, -(FACE_H * g.scale.x * .5 + .5));
+          rk.position.z -= .2;
+          fireTrail(trail.copy(rk.position).addScaledVector(dir, -.85), 4);
           g.rotation.z = Math.max(-.5, Math.min(.5, Math.atan2(dir.y, dir.x) * .12));
         }
       }, ease.inOut);
@@ -912,8 +951,9 @@ const TRAVEL2 = {
   // テレポート: 光の柱で消えて、席の上に光の柱で現れる
   async teleport(list, cards) {
     const pillar = (local, h, col) => {
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: V.tex.glow, color: col, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
-      m.position.copy(local); m.scale.set(.01, h, 1); V.stage.add(m);
+      const m = stageActor(buildTeleportPillar);
+      m.material.color.copy(col);
+      m.position.copy(local); m.scale.set(.01, h, 1);
       return m;
     };
     const col = hdr(0x9fd8ff, 2.2);
@@ -924,7 +964,7 @@ const TRAVEL2 = {
     await tween(450, t => cards.forEach((g, i) => { g.scale.set(ks[i] * (1 - t), ks[i] * (1 + t * .5), ks[i]); g.rotation.y = t * 8; }), ease.in);
     cards.forEach(g => { g.visible = false; g.rotation.set(0, 0, 0); });
     await tween(250, t => ps.forEach(m => { m.scale.x = 2.2 * (1 - t); }), ease.in);
-    ps.forEach(m => { V.stage.remove(m); m.geometry.dispose(); m.material.dispose(); });
+    ps.forEach(m => m.userData.remove());
     dolly(.12, list[0].key, 700);
     await sleep(350);
     await Promise.all(cards.map((g, i) => sleep(i * 300).then(async () => {
@@ -936,7 +976,7 @@ const TRAVEL2 = {
       await tween(450, t => { g.scale.set(Math.max(.01, t), 1 + (1 - t) * .5, 1); g.visible = t > .9 || Math.random() < .7; }, ease.out);
       g.visible = true;
       await tween(250, t => { p2.scale.x = 1.8 * (1 - t); }, ease.in);
-      V.stage.remove(p2); p2.geometry.dispose(); p2.material.dispose();
+      p2.userData.remove();
       await landCard(g, s, key);
     })));
     await dolly(0, null, 500);
@@ -977,7 +1017,8 @@ const TRAVEL2 = {
   // せり上がり: カードが席の光の柱に吸い込まれ、札が浮かびながら名前が出る
   async rise(list, cards) {
     const pillars = list.map(({ key }) => {
-      const W = seatW(key), m = beamMesh(0xfff2cc, 0);
+      const W = seatW(key), m = stageActor(buildRiseBeam);
+      m.material.uniforms.uOpacity.value = 0;
       V.scene.add(m);
       aimBeam(m, v3(W.x, 11, W.z), v3(W.x, 0, W.z), .95);
       return m;
@@ -1002,7 +1043,7 @@ const TRAVEL2 = {
       list.forEach(({ key }) => { const o = V.seat[key]; o.jump = 1.3 * (1 - t); o.pivot.scale.setScalar(1 + .6 * (1 - t)); });
       pillars.forEach(m => { m.material.uniforms.uOpacity.value = .6 * (1 - t); });
     }, ease.inOut);
-    pillars.forEach(m => { V.scene.remove(m); m.geometry.dispose(); m.material.dispose(); });
+    pillars.forEach(m => m.userData.remove());
     list.forEach(({ key }) => { V.seat[key].jump = 0; V.seat[key].pivot.scale.setScalar(1); });
   },
 
@@ -1098,8 +1139,13 @@ async function warmUpShaders() {
   ufo.beam.visible = true;
   const wind = stageGust(1);
   wind.userData.progress(.5);
+  const confetti = stageActor(buildConfetti, CONFETTI_COUNT);
+  confetti.count = 1;
   const actors = [
-    wind, ufo.g, stageActor(buildRocket), stageActor(buildClock), stageActor(buildZs),
+    wind, ufo.g, confetti, stageActor(buildRocket), stageActor(buildRocket),
+    stageActor(buildClock), stageActor(buildZs), stageActor(buildWarpTunnel), stageActor(buildCurtains),
+    stageActor(buildTeleportPillar), stageActor(buildTeleportPillar), stageActor(buildRiseBeam), stageActor(buildRiseBeam),
+    stageActor(buildShockwave), stageActor(buildShockwave), stageActor(buildShockwave),
     stageActor(showRingRig), stageActor(showCrystalRig), stageActor(showConstellation), stageActor(showLightRails),
     ...(ENABLE_CAT ? CAT_COATS.map(coat => stageActor(buildCat, coat)) : []),
   ];
@@ -1108,27 +1154,34 @@ async function warmUpShaders() {
     uniforms: { uColor: { value: new THREE.Color(1, 1, 1) }, uOpacity: { value: 1 } },
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
   }));
-  const lg = new THREE.BufferGeometry();
-  lg.setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3));
-  const lines = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
-  const confetti = new THREE.InstancedMesh(new THREE.PlaneGeometry(.1, .1), new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, toneMapped: false }), 2);
   const balls = new THREE.InstancedMesh(new THREE.SphereGeometry(.1, 8, 6), new THREE.MeshPhysicalMaterial({ metalness: .15, roughness: .15, clearcoat: 1 }), 2);
-  [confetti, balls].forEach(m => { m.setColorAt(0, new THREE.Color(1, 1, 1)); m.setColorAt(1, new THREE.Color(1, 0, 0)); });
-  const curtain = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshStandardMaterial({ map: V.tex.glow, roughness: .7 }));
-  const ring = new THREE.Mesh(new THREE.RingGeometry(.8, 1, 16), new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
-  const beam = beamMesh(0xffffff, .1);
+  balls.setColorAt(0, new THREE.Color(1, 1, 1));
+  balls.setColorAt(1, new THREE.Color(1, 0, 0));
   const gift = new THREE.Mesh(new THREE.TorusKnotGeometry(.1, .03, 16, 4), new THREE.MeshStandardMaterial({ color: 0xfbbf24, roughness: .3, metalness: .8, emissive: 0x553300, emissiveIntensity: .4 }));
-  g.add(glass, lines, confetti, balls, curtain, ring, beam, gift);
+  g.add(glass, balls, gift);
   const cards = [0, 1, 2].map(() => pairCard(studentsOriginal[0], "1人目", 1));
   const pv = V.particles.pts.visible, cv = V.card.obj.visible, sv = V.sparks.pts.visible;
   V.particles.pts.visible = true;
   V.card.obj.visible = true;
   V.sparks.pts.visible = true;
+  const culled = [];
+  V.stage.traverseVisible(object => {
+    if (object.geometry && object.frustumCulled) {
+      culled.push(object);
+      object.frustumCulled = false;
+    }
+  });
   try {
     await V.renderer.compileAsync(V.scene, V.camera);
     V.composer.render();
+    if (V.lightBloom) {
+      setReducedEffects(true);
+      V.composer.render();
+    }
     V.renderer.getContext().finish();
   } finally {
+    setReducedEffects(false);
+    culled.forEach(object => { object.frustumCulled = true; });
     V.frontImpactRings.visible = false;
     V.particles.pts.visible = pv;
     V.card.obj.visible = cv;

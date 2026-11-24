@@ -218,6 +218,8 @@ button:disabled { opacity: 0; pointer-events: none; }
 body.ready .loading, body.fallback .loading { opacity: 0; }
 .loading { align-content: center; gap: 18px; }
 .load-text { font-size: 14px; font-weight: 800; letter-spacing: .3em; color: rgba(255,255,255,.6); }
+.loading progress { width: min(62vw, 230px); height: 8px; accent-color: var(--gold); }
+body.ready .loading .ring, body.fallback .loading .ring { animation: none; }
 .ring {
   width: 56px; height: 56px;
   border-radius: 50%;
