@@ -16,7 +16,9 @@ const MC_BGM_SETTLE = 3.4;
 const SFX_VOLUME = .85;     // 効果音全体の音量 (BGM とのバランス)
 const MC_RISE_SECONDS = 1.10;
 const MASTER_LOOKAHEAD = .006;  // DynamicsCompressorNode の固定先読み
-const BGM = { loading: new Map(), buffers: new Map(), main: null, request: null, playing: null };
+const BGM = { loading: new Map(), buffers: new Map(), request: null, playing: null };
+const APPLE_MOBILE = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+  (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 
 // iPad / iPhone のマナーモードでも鳴らす (Safari 16.4+)
 try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch {}
@@ -54,7 +56,8 @@ function audioOutputTime(ctx, wallTime = performance.now()) {
     return Math.min(ctx.currentTime, stamp.contextTime + (wallTime - stamp.performanceTime) / 1000) - MASTER_LOOKAHEAD;
   }
   // 出力タイムスタンプが使えないブラウザでは、報告された遅延を引く。
-  return ctx.currentTime - (ctx.baseLatency || 0) - (ctx.outputLatency || 0) - MASTER_LOOKAHEAD;
+  const latency = ctx.outputLatency || (APPLE_MOBILE ? .075 : 0);
+  return ctx.currentTime - (ctx.baseLatency || 0) - latency - MASTER_LOOKAHEAD;
 }
 
 function soundLoad() {
@@ -149,30 +152,30 @@ function buildMcTransitionSounds(ctx) {
 
 function buildMcHeelToe(ctx, noise, tone) {
   const rate = ctx.sampleRate;
-  const step = ctx.createBuffer(1, Math.round(rate * .38), rate);
+  const step = ctx.createBuffer(1, Math.round(rate * .17), rate);
   const samples = step.getChannelData(0);
   const direct = new Float32Array(samples.length);
-  const lowMix = 1 - Math.exp(-2 * Math.PI * 390 / rate);
-  const highMix = 1 - Math.exp(-2 * Math.PI * 3250 / rate);
+  const lowMix = 1 - Math.exp(-2 * Math.PI * 1050 / rate);
+  const highMix = 1 - Math.exp(-2 * Math.PI * 5800 / rate);
   const tap = (at, weight, heel) => {
     const start = Math.round(at * rate);
     let low = 0, high = 0;
-    for (let i = 0; i < .105 * rate; i++) {
+    for (let i = 0; i < .063 * rate; i++) {
       const t = i / rate, white = noise();
       low += lowMix * (white - low);
       high += highMix * (white - high);
-      const wood = .51 * Math.sin(2 * Math.PI * (heel ? 193 : 251) * tone * t) * Math.exp(-t * 65) +
-        .29 * Math.sin(2 * Math.PI * (heel ? 384 : 512) * tone * t) * Math.exp(-t * 115) +
-        .17 * Math.sin(2 * Math.PI * 850 * tone * t) * Math.exp(-t * 155);
-      const leather = .49 * (high - low) * Math.exp(-t * (heel ? 99 : 73));
-      direct[start + i] += Math.min(1, t / .0014) * weight * (wood + leather);
+      const floor = .19 * Math.sin(2 * Math.PI * (heel ? 570 : 710) * tone * t) * Math.exp(-t * 140) +
+        .31 * Math.sin(2 * Math.PI * 1450 * tone * t) * Math.exp(-t * 220) +
+        .16 * Math.sin(2 * Math.PI * 2770 * tone * t) * Math.exp(-t * 330);
+      const click = .87 * (high - low) * Math.exp(-t * (heel ? 165 : 185));
+      direct[start + i] += Math.min(1, t / .00065, (.063 - t) / .009) * weight * (floor + click);
     }
   };
   tap(0, 1, true);
-  tap(.052 / tone, .48, false);
+  tap(MC_SOLE_AT, .36, false);
   samples.set(direct);
   // 同じ打音の短い反射だけを重ねる。長いエコーや低い持続音は入れない。
-  for (const [seconds, gain] of [[.019,.16],[.034,-.12],[.074,.10],[.091,.074],[.129,-.051],[.168,.033],[.208,.019]]) {
+  for (const [seconds, gain] of [[.013,.065],[.027,-.04],[.048,.026]]) {
     const delay = Math.round(seconds * rate);
     for (let i = delay; i < samples.length; i++) samples[i] += direct[i - delay] * gain;
   }
@@ -196,7 +199,6 @@ function loadBgm(name) {
       return response.arrayBuffer();
     }).then(data => SND.ctx.decodeAudioData(data)).then(buffer => {
       BGM.buffers.set(name, buffer);
-      if (name === "main") BGM.main = buffer;
       return buffer;
     }).finally(() => BGM.loading.delete(name));
     BGM.loading.set(name, file);
@@ -249,6 +251,7 @@ async function bgm(name, level = BGM_VOLUME[name], cue = null) {
     src.start(start);
     fadeOutBgm(BGM.playing, BGM_FADE);
     BGM.playing = track;
+    return track;
   } catch {
     if (BGM.request === request) {
       BGM.request = null;
@@ -287,7 +290,8 @@ function cueMcBgm(at) {
 }
 
 function cancelMcBgmCue() {
-  if (BGM.request?.cue == null || BGM.request.cue <= SND.ctx.currentTime) return;
+  if (BGM.request?.cue == null) return;
+  if (BGM.playing && BGM.playing.playbackStart <= SND.ctx.currentTime) return;
   BGM.request = null;
   BGM.playing?.src.stop();
   BGM.playing = null;

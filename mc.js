@@ -12,6 +12,7 @@ const MC_RISE_AT = 12.68;
 const MC_END = 13.34;
 const MC_WALK_END = 4.14;
 const MC_STEP_INTERVAL = .65;
+const MC_SOLE_AT = .052;
 const MC_STEP_COUNT = 6;
 const MC_LAST_STEP = MC_STEP_INTERVAL * MC_STEP_COUNT;
 const MC_GREETING_AT = 4.95;
@@ -22,13 +23,20 @@ const MC_THANKS_AT = MC_GREETING_AT + 4.03;
 const MC_THANKS_CAPTION = "本日はお集まりいただき、ありがとうございます！";
 const MC_MUSIC_START_OFFSET = 1.32;  // 「START」の頭
 const MC_MUSIC_CAPTION = "MUSIC START!!";
-// bgm_main.m4a の冒頭を PCM に展開し、帯域スペクトルと短時間 RMS の両方から測った拍。
-const MC_MUSIC_BPM = 146.5;
-const MC_FIRST_BEAT = .284;
+const MC_MUSIC_BPM = 112;
+const MC_FIRST_BEAT = .014;
 const MC_BEAT_SECONDS = 60 / MC_MUSIC_BPM;
-const MC_WIDE_AT = MC_FIRST_BEAT + MC_BEAT_SECONDS;
-const MC_PUSH_IN_AT = MC_WIDE_AT + 9 * MC_BEAT_SECONDS;
-const MC_NEXT_LINE_AT = MC_PUSH_IN_AT + 2 * MC_BEAT_SECONDS;
+// PCM のキックとスネアの立ち上がり。冒頭の揺れを112 BPMの格子からの差分で残す。
+const MC_BEAT_NUDGES = [0, .004, .017, .031, .033, .037, .042, .078, .078, .083, .095];
+const MC_BEATS = MC_BEAT_NUDGES.map((nudge, i) => MC_FIRST_BEAT + i * MC_BEAT_SECONDS + nudge);
+const MC_WIDE_AT = MC_BEATS[1];
+const MC_PUSH_IN_AT = MC_BEATS[8];
+const MC_NEXT_LINE_AT = MC_BEATS[10];
+const MC_BEAT_OFFSET = Math.max(-.25, Math.min(.25, Number(new URLSearchParams(location.search).get("beatOffset")) || 0));
+
+function mcBeatAt(musicTime) {
+  return MC_BEATS.findLastIndex(at => musicTime >= at);
+}
 const MC_SEEN_KEY = "404-mc-intro-seen";
 const MC_REACTIONS = {
   good: "GOOD!!",
@@ -262,7 +270,7 @@ function mcShowCaption(t, cue, first, end, previous, current, box) {
 function mcCamera(rig, actor, t, dialogue, short, offset, musicHit, anticipation, musicWide, sway, pulse) {
   const { camera, aim, from, fromRotation, defaultPos, defaultRotation, shift } = rig;
   const tracking = ease.inOut(clamp01((t - .65) / 1.7));
-  const settle = ease.inOut(clamp01((t - 2.96) / 1.31));
+  const settle = ease.inOut(clamp01((t - 3.73) / 1.12));
   const punch = Math.max(musicHit, ease.out(clamp01((dialogue - (MC_FANFARE_AT - .15)) / .31)));
   const pullBackAt = MC_LINES[2].at + (short ? .16 : 0);
   const wide = Math.max(musicWide, ease.inOut(clamp01((dialogue - pullBackAt) / (MC_END - pullBackAt))));
@@ -277,7 +285,8 @@ function mcCamera(rig, actor, t, dialogue, short, offset, musicHit, anticipation
   camera.position.set(actor.position.x + x * (1 + fit * .24), y, cameraZ);
   aim.set(actor.position.x, lerp(lerp(.96, .97, tracking), lerp(1.48, 1.58, punch), settle), actor.position.z);
   camera.lookAt(aim);
-  const enter = 1 - ease.out(clamp01((t - offset) / (short ? .30 : .24)));
+  // 歩き始めは足元へのカット。教室全景から補間して教卓を横切らない。
+  const enter = short ? 1 - ease.out(clamp01((t - offset) / .30)) : 0;
   camera.position.lerp(from, enter).lerp(defaultPos, wide);
   camera.quaternion.slerp(fromRotation, enter).slerp(defaultRotation, wide);
   shift.set(.095 * sway, 0, -.16 * pulse).multiplyScalar(musicWide).applyQuaternion(defaultRotation);
@@ -302,12 +311,19 @@ async function playMcIntro(unlocked) {
   let short = mcSeen;
   try { short ||= sessionStorage.getItem(MC_SEEN_KEY) === "1"; } catch {}
   const offset = short ? MC_SHORT_AT : 0;
-  const withMusicCall = !short && !!host.musicCall && !!BGM.main;
+  const main = !short && host.musicCall && (BGM.buffers.get("main") || await loadBgm("main").catch(error => {
+    console.warn("司会者のBGMを読み込めませんでした", error);
+    return null;
+  }));
+  const withMusicCall = !!main;
   const thanks = withMusicCall ? host.thanks : null;
   const musicCallAt = MC_THANKS_AT + (thanks ? thanks.duration + .99 : 0);
   const musicStartAt = musicCallAt + MC_MUSIC_START_OFFSET;
   const callEnd = musicCallAt + (host.musicCall?.duration ?? 0);
-  const middleAt = musicStartAt + MC_NEXT_LINE_AT - (MC_LINES[1].at - MC_DIALOGUE_RESUME);
+  const start = ctx.currentTime + .035;
+  const musicTrack = withMusicCall ? await cueMcBgm(start + musicStartAt) : null;
+  const musicShift = musicTrack ? Math.max(0, musicTrack.playbackStart - start - musicStartAt) : 0;
+  const middleAt = musicStartAt + musicShift + MC_BEAT_OFFSET + MC_NEXT_LINE_AT - (MC_LINES[1].at - MC_DIALOGUE_RESUME);
   const lastAt = middleAt + (MC_DIALOGUE_CUT - MC_DIALOGUE_RESUME) + .92;
   const fallbackAt = short ? 0 : MC_WALK_END + .23;
   const lastShift = withMusicCall ? lastAt - MC_SHORT_AT : fallbackAt;
@@ -326,7 +342,6 @@ async function playMcIntro(unlocked) {
     { buffer: host.voice, at: middleAt, from: MC_DIALOGUE_RESUME, duration: MC_DIALOGUE_CUT - MC_DIALOGUE_RESUME },
     { buffer: host.voice, at: lastAt, from: MC_SHORT_AT },
   ] : [{ buffer: host.voice, at: fallbackAt + offset, from: offset }];
-  const start = ctx.currentTime + .035;
   const gain = ctx.createGain();
   const meter = ctx.createAnalyser();
   meter.fftSize = 256;
@@ -375,19 +390,18 @@ async function playMcIntro(unlocked) {
     const turn = ease.inOut(clamp01((t - 3.12) / 1.02));
     host.actor.rotation.y = lerp(Math.atan2(heading.x, heading.z), 0, turn);
     const walking = (1 - ease.out(clamp01((t - 3.90) / .24))) * clamp01(t / .28);
-    const musicTime = withMusicCall ? audioNow - (BGM.playing?.playbackStart ?? start + musicStartAt) : 0;
-    const musicHit = withMusicCall ? ease.out(clamp01((musicTime + .18) / .25)) *
+    const musicTime = musicTrack ? audioNow - musicTrack.playbackStart - MC_BEAT_OFFSET : -Infinity;
+    const musicHit = musicTrack ? ease.out(clamp01((musicTime + .18) / .25)) *
       (1 - ease.inOut(clamp01((musicTime - .46) / .65))) : 0;
     const musicMic = withMusicCall ? ease.out(clamp01((t - musicCallAt + .19) / .19)) *
       (1 - ease.inOut(clamp01((t - callEnd) / .20))) : 0;
-    const musicWide = withMusicCall ? ease.inOut(clamp01(musicTime / MC_WIDE_AT)) *
+    const musicWide = musicTrack ? ease.inOut(clamp01(musicTime / MC_WIDE_AT)) *
       ease.inOut(clamp01((MC_NEXT_LINE_AT - musicTime) / (MC_NEXT_LINE_AT - MC_PUSH_IN_AT))) : 0;
-    const beat = (musicTime - MC_FIRST_BEAT) / MC_BEAT_SECONDS;
-    const beatIndex = Math.floor(beat);
-    const phase = beat - beatIndex;
-    // 拍頭の最初の描画で最大に近づけ、次の拍までに戻す。
-    const sinceBeat = phase * MC_BEAT_SECONDS;
-    const pulse = beatIndex < 0 ? 0 : clamp01(sinceBeat / .002) * (1 - clamp01((sinceBeat - .002) / .28)) ** 2;
+    const beatIndex = mcBeatAt(musicTime);
+    const sinceBeat = musicTime - MC_BEATS[beatIndex];
+    // 拍頭を最大にし、小節の1拍目は少し強くする。
+    const accent = beatIndex % 4 === 0 ? 1 : beatIndex % 2 === 0 ? .75 : .58;
+    const pulse = beatIndex < 0 ? 0 : accent * (1 - clamp01(sinceBeat / .25)) ** 2;
     const sway = beatIndex % 2 === 0 ? pulse : -pulse;
     const inSpeech = (dialogue >= MC_LINES[0].at && dialogue < host.voice.duration) || musicMic > 0;
     const speaking = inSpeech ? mcVoiceLevel(meter, wave) : 0;
@@ -431,8 +445,7 @@ async function playMcIntro(unlocked) {
     document.addEventListener("visibilitychange", onHidden);
     ctx.addEventListener("statechange", onAudioState);
     bgmDuck(true, withMusicCall ? .82 : .35);
-    if (withMusicCall) cueMcBgm(start + musicStartAt);
-    else bgm("main");
+    if (!musicTrack) bgm("main");
     parts.forEach(({ at, from, duration }, i) => {
       const when = start + at - offset;
       if (duration === undefined) voices[i].start(when, from);
