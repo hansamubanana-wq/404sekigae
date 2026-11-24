@@ -11,12 +11,16 @@ const MC_SUBTITLE_OUT = 13.28;
 const MC_RISE_AT = 12.68;
 const MC_END = 13.34;
 const MC_WALK_END = 4.14;
-const MC_GREETING_AT = 4.36;
+const MC_GREETING_AT = 4.95;
 const MC_GREETING_CUT = 3.16;  // 1文目と2文目の間の無音
 const MC_DIALOGUE_RESUME = 3.49;
-const MC_MUSIC_CALL_AT = MC_GREETING_AT + 3.40;
+const MC_DIALOGUE_CUT = 10.63;
+const MC_MUSIC_CALL_AT = MC_GREETING_AT + 4.03;
 const MC_MUSIC_START_AT = MC_MUSIC_CALL_AT + 1.32;  // 「START」の頭
-const MC_MUSIC_CAPTION = "音楽、スタート！";
+const MC_MUSIC_CAPTION = "MUSIC START!!";
+// bgm_main.m4a の冒頭は、.28秒から約.41秒間隔で強い拍が続く。
+const MC_MUSIC_BPM = 146;
+const MC_FIRST_BEAT = .28;
 const MC_SEEN_KEY = "404-mc-intro-seen";
 const MC_REACTIONS = {
   good: "GOOD!!",
@@ -227,24 +231,26 @@ function mcShowCaption(t, cue, first, end, previous, current, box) {
   box.style.opacity = 1 - ease.inOut(clamp01((t - (end - fade)) / fade));
 }
 
-function mcCamera(rig, actor, t, dialogue, short, offset, musicHit) {
-  const { camera, aim, from, fromRotation, defaultPos, defaultRotation } = rig;
+function mcCamera(rig, actor, t, dialogue, short, offset, musicHit, anticipation, musicWide, beat, pulse) {
+  const { camera, aim, from, fromRotation, defaultPos, defaultRotation, shift } = rig;
   const tracking = ease.inOut(clamp01((t - .65) / 1.7));
   const settle = ease.inOut(clamp01((t - 2.96) / 1.31));
   const punch = Math.max(musicHit, ease.out(clamp01((dialogue - (MC_FANFARE_AT - .15)) / .31)));
   const pullBackAt = MC_LINES[2].at + (short ? .16 : 0);
-  const wide = ease.inOut(clamp01((dialogue - pullBackAt) / (MC_END - pullBackAt)));
+  const wide = Math.max(musicWide, ease.inOut(clamp01((dialogue - pullBackAt) / (MC_END - pullBackAt))));
   const x = lerp(lerp(4.85, 4.45, tracking), lerp(1.02, .55, punch), settle);
   const y = lerp(lerp(.70, 1.28, tracking), lerp(1.70, 1.82, punch), settle);
   const z = lerp(lerp(.49, 1.02, tracking), lerp(3.77, 2.73, punch), settle);
   const fit = clamp01((1.15 - camera.aspect) / .62);
-  const cameraZ = Math.max(actor.position.z + z * (1 + fit * .45), PODIUM_Z + 1.05);
+  const cameraZ = Math.max(actor.position.z + z * (1 + fit * .45) - .18 * anticipation, PODIUM_Z + 1.05);
   camera.position.set(actor.position.x + x * (1 + fit * .24), y, cameraZ);
   aim.set(actor.position.x, lerp(lerp(.96, .97, tracking), lerp(1.48, 1.58, punch), settle), actor.position.z);
   camera.lookAt(aim);
   const enter = 1 - ease.out(clamp01((t - offset) / (short ? .30 : .24)));
   camera.position.lerp(from, enter).lerp(defaultPos, wide);
   camera.quaternion.slerp(fromRotation, enter).slerp(defaultRotation, wide);
+  shift.set(.095 * Math.sin(beat / 2), 0, -.16 * pulse).multiplyScalar(musicWide).applyQuaternion(defaultRotation);
+  camera.position.add(shift);
   return wide;
 }
 
@@ -266,39 +272,45 @@ async function playMcIntro(unlocked) {
   try { short ||= sessionStorage.getItem(MC_SEEN_KEY) === "1"; } catch {}
   const offset = short ? MC_SHORT_AT : 0;
   const withMusicCall = !short && !!host.musicCall;
-  const callEnd = withMusicCall ? MC_MUSIC_CALL_AT + host.musicCall.duration : MC_WALK_END;
-  const voiceOffset = withMusicCall ? MC_DIALOGUE_RESUME : offset;
-  const voiceAt = short ? 0 : callEnd + .23;
-  const dialogueAt = voiceAt - (withMusicCall ? voiceOffset : 0);
-  const end = dialogueAt + MC_END;
-  const cues = MC_LINES.filter(line => line.at > voiceOffset).map(line => ({ ...line, at: line.at + dialogueAt }));
-  if (withMusicCall) cues.unshift(
+  const callEnd = MC_MUSIC_CALL_AT + (host.musicCall?.duration ?? 0);
+  const middleAt = callEnd + .85;
+  const lastAt = middleAt + (MC_DIALOGUE_CUT - MC_DIALOGUE_RESUME) + .92;
+  const fallbackAt = short ? 0 : MC_WALK_END + .23;
+  const lastShift = withMusicCall ? lastAt - MC_SHORT_AT : fallbackAt;
+  const end = lastShift + MC_END + (withMusicCall ? .49 : 0);
+  const cues = withMusicCall ? [
     { ...MC_LINES[0], at: MC_GREETING_AT + MC_LINES[0].at },
-    { at: MC_MUSIC_CALL_AT, text: MC_MUSIC_CAPTION },
-  );
+    { at: MC_MUSIC_CALL_AT, text: MC_MUSIC_CAPTION, lang: "en" },
+    { ...MC_LINES[1], at: middleAt + MC_LINES[1].at - MC_DIALOGUE_RESUME },
+    { ...MC_LINES[2], at: lastShift + MC_LINES[2].at },
+  ] : MC_LINES.filter(line => line.at > offset).map(line => ({ ...line, at: line.at + fallbackAt }));
+  const parts = withMusicCall ? [
+    { buffer: host.voice, at: MC_GREETING_AT, from: 0, duration: MC_GREETING_CUT },
+    { buffer: host.musicCall, at: MC_MUSIC_CALL_AT, from: 0 },
+    { buffer: host.voice, at: middleAt, from: MC_DIALOGUE_RESUME, duration: MC_DIALOGUE_CUT - MC_DIALOGUE_RESUME },
+    { buffer: host.voice, at: lastAt, from: MC_SHORT_AT },
+  ] : [{ buffer: host.voice, at: fallbackAt + offset, from: offset }];
   const start = ctx.currentTime + .035;
-  const voice = ctx.createBufferSource();
-  const call = withMusicCall ? ctx.createBufferSource() : null;
-  const greeting = withMusicCall ? ctx.createBufferSource() : null;
   const gain = ctx.createGain();
   const meter = ctx.createAnalyser();
   meter.fftSize = 256;
   const wave = new Float32Array(meter.fftSize);
-  voice.buffer = host.voice;
-  voice.connect(meter).connect(gain).connect(SND.master);
-  voice.onended = () => { voice.disconnect(); meter.disconnect(); gain.disconnect(); };
-  if (call) {
-    greeting.buffer = host.voice;
-    greeting.connect(meter);
-    greeting.onended = () => greeting.disconnect();
-    call.buffer = host.musicCall;
-    call.connect(meter);
-    call.onended = () => call.disconnect();
-  }
+  meter.connect(gain).connect(SND.master);
+  let pendingVoices = parts.length;
+  const voices = parts.map(part => {
+    const source = ctx.createBufferSource();
+    source.buffer = part.buffer;
+    source.connect(meter);
+    source.onended = () => {
+      source.disconnect();
+      if (--pendingVoices === 0) { meter.disconnect(); gain.disconnect(); }
+    };
+    return source;
+  });
   const camera = V.camera;
   const defaultPos = V.homePos.clone().add(V.camOffset);
   const defaultRotation = V.homeQuat.clone();
-  const rig = { camera, defaultPos, defaultRotation, from: camera.position.clone(), fromRotation: camera.quaternion.clone(), aim: v3() };
+  const rig = { camera, defaultPos, defaultRotation, from: camera.position.clone(), fromRotation: camera.quaternion.clone(), aim: v3(), shift: v3() };
   const heading = v3();
   const light = V.spotFocusAt.clone();
   const focus = V.spotFocus;
@@ -314,9 +326,12 @@ async function playMcIntro(unlocked) {
   let completed = false;
 
   function update(t) {
-    const dialogue = withMusicCall && t < voiceAt
-      ? Math.min(t - MC_GREETING_AT, MC_GREETING_CUT)
-      : t - dialogueAt;
+    let dialogue = t - lastShift;
+    if (withMusicCall && t < middleAt) dialogue = Math.min(t - MC_GREETING_AT, MC_GREETING_CUT);
+    else if (withMusicCall && t < lastAt) dialogue = Math.min(MC_DIALOGUE_RESUME + t - middleAt, MC_DIALOGUE_CUT);
+    const nextLine = cues.findLastIndex(cue => t >= cue.at);
+    const lead = (cues[nextLine + 1]?.at ?? Infinity) - t;
+    const anticipation = withMusicCall && t >= MC_WALK_END && lead < .9 ? Math.sin(Math.PI * lead / .9) : 0;
     const pace = clamp01((t - .09) / (MC_WALK_END - .09));
     host.path.getPointAt(pace, host.actor.position);
     host.path.getTangentAt(pace, heading);
@@ -329,23 +344,28 @@ async function playMcIntro(unlocked) {
       (1 - ease.inOut(clamp01((musicTime - .46) / .65))) : 0;
     const musicMic = withMusicCall ? ease.out(clamp01((t - MC_MUSIC_CALL_AT + .19) / .19)) *
       (1 - ease.inOut(clamp01((t - callEnd) / .20))) : 0;
+    const musicWide = withMusicCall ? ease.inOut(clamp01(musicTime / .68)) *
+      ease.inOut(clamp01((middleAt + .06 - t) / .86)) : 0;
+    const beat = (musicTime - MC_FIRST_BEAT) * (Math.PI * 2 * MC_MUSIC_BPM / 60);
+    const pulse = (.5 + .5 * Math.cos(beat)) ** 4;
     const inSpeech = (dialogue >= MC_LINES[0].at && dialogue < host.voice.duration) || musicMic > 0;
     const speaking = inSpeech ? mcVoiceLevel(meter, wave) : 0;
     voiceLevel = lerp(voiceLevel, speaking, .47);
-    const wide = mcCamera(rig, host.actor, t, dialogue, short, offset, musicHit);
+    const wide = mcCamera(rig, host.actor, t, dialogue, short, offset, musicHit, anticipation, musicWide, beat, pulse);
     const angle = Math.atan2(camera.position.x - host.actor.position.x, camera.position.z - host.actor.position.z) - host.actor.rotation.y;
-    poseMc(host, dialogue, distance, walking, voiceLevel, Math.atan2(Math.sin(angle), Math.cos(angle)), musicHit, musicMic);
+    poseMc(host, dialogue, distance, walking, voiceLevel, Math.atan2(Math.sin(angle), Math.cos(angle)),
+      musicHit, musicMic, anticipation, Math.sin(t * 2.8));
     V.spotFocusAt.copy(host.actor.position);
     V.spotFocus = .43 * (1 - wide);
     V.spotPower = lerp(spotPower * .32, spotPower, wide);
-    V.roomWarmLight.intensity = lerp(warm * .45, warm, wide);
+    V.roomWarmLight.intensity = warm * (lerp(.45, 1, wide) + .13 * musicWide * pulse);
 
     const footfall = Math.floor((distance + .17) / .58);
     if (!short && walking > .08 && footfall > step) {
       footSound = mcTransitionSfx("foot", { vol: .89, pan: -.48 + pace * .48, vary: .13 });
       step = footfall;
     }
-    if (withMusicCall && !dialogueDucked && t >= voiceAt) {
+    if (withMusicCall && !dialogueDucked && t >= middleAt) {
       dialogueDucked = true;
       bgmDuck(true, .59);
     }
@@ -356,11 +376,12 @@ async function playMcIntro(unlocked) {
       const at = V.stage.worldToLocal(v3(x + .30, 1.41, z + .26));
       burst(at, [hdr(0xa7d7ff, 2.6), hdr(0xffd199, 2.8)], 24, 1.5, { life: .52, size: .039, grav: .2 });
     }
-    const nextLine = cues.findLastIndex(cue => t >= cue.at);
     if (nextLine !== line) {
       line = nextLine;
       currentText.textContent = cues[line]?.text || "";
+      currentText.lang = cues[line]?.lang || "";
       previousText.textContent = cues[line - 1]?.text || "";
+      previousText.lang = cues[line - 1]?.lang || "";
     }
     mcShowCaption(t, cues[line], line === 0, end, previous, current, subtitles);
   }
@@ -374,15 +395,14 @@ async function playMcIntro(unlocked) {
     document.addEventListener("visibilitychange", onHidden);
     ctx.addEventListener("statechange", onAudioState);
     bgmDuck(true, withMusicCall ? .82 : .35);
-    if (withMusicCall) {
-      greeting.start(start + MC_GREETING_AT, 0, MC_GREETING_CUT);
-      call.start(start + MC_MUSIC_CALL_AT);
-      cueMcBgm(start + MC_MUSIC_START_AT);
-    } else {
-      bgm("main");
-    }
-    voice.start(start + voiceAt, voiceOffset);
-    rise = mcTransitionSfx("rise", { vol: .29, delay: Math.max(0, start + dialogueAt + MC_RISE_AT - offset - ctx.currentTime) });
+    if (withMusicCall) cueMcBgm(start + MC_MUSIC_START_AT);
+    else bgm("main");
+    parts.forEach(({ at, from, duration }, i) => {
+      const when = start + at - offset;
+      if (duration === undefined) voices[i].start(when, from);
+      else voices[i].start(when, from, duration);
+    });
+    rise = mcTransitionSfx("rise", { vol: .29, delay: Math.max(0, start + lastShift + MC_RISE_AT - offset - ctx.currentTime) });
     mcSeen = true;
     try { sessionStorage.setItem(MC_SEEN_KEY, "1"); } catch {}
     V.camRig = () => {
@@ -402,9 +422,9 @@ async function playMcIntro(unlocked) {
     clearTimeout(watchdog);
     const now = ctx.currentTime;
     gain.gain.setTargetAtTime(0, now, .025);
-    try { voice.stop(now + .10); } catch {}
-    try { greeting?.stop(now + .10); } catch {}
-    try { call?.stop(now + .10); } catch {}
+    for (const voice of voices) {
+      try { voice.stop(now + .10); } catch {}
+    }
     if (!completed) {
       cancelMcBgmCue();
       rise?.stop(.035);
