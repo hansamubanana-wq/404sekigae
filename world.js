@@ -1144,6 +1144,7 @@ function frame(now) {
     o.pivot.position.x = o.base.x + (o.rippleX || 0);
     o.pivot.position.y = o.base.y + Math.sin(t * 1.3 + o.phase) * .03 + (o.jump || 0) + (o.rippleY || 0);
     o.pivot.position.z = o.base.z + (o.rippleZ || 0);
+    if (o.catPlateOffset) o.pivot.position.add(o.catPlateOffset);
     if (V.billboard) o.pivot.quaternion.copy(V.camera.quaternion);
   }
 
