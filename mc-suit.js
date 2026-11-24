@@ -1,15 +1,15 @@
 "use strict";
 
-// The first frame with each sole touching the floor in the source Walk clip.
+// The first frame with each sole touching the floor in the retargeted Walk clip.
 const MC_SUIT_CONTACT = .725;
-const MC_SUIT_STRIDE = 1.07;
+const MC_SUIT_STRIDE = .49;
 const MC_SUIT_PLANT_BLEND = .085;
 
 async function loadMcSuit() {
   const { GLTFLoader } = await import("three/addons/loaders/GLTFLoader.js");
-  const { scene: model, animations } = await new GLTFLoader().loadAsync("media/mc/suit-male.glb");
+  const { scene: model, animations } = await new GLTFLoader().loadAsync("media/mc/kenney-host.glb");
   const actor = new THREE.Group();
-  actor.name = "MC Suit Male";
+  actor.name = "MC Kenney";
   const gait = new THREE.Group();
   actor.add(gait);
   gait.add(model);
@@ -19,11 +19,18 @@ async function loadMcSuit() {
   const idle = mixer.clipAction(clip("Idle")).play();
   const gestureClip = clip("Victory").clone();
   // Mix the free arm over Idle. Keep the microphone hand and the planted feet in Idle.
-  gestureClip.tracks = gestureClip.tracks.filter(track => /^(Shoulder|UpperArm|LowerArm|Fist)L\./.test(track.name));
   THREE.AnimationUtils.makeClipAdditive(gestureClip, 0, clip("Idle"));
   const gesture = mixer.clipAction(gestureClip).play();
-  const feet = ["FootL", "FootR"].map(name => model.getObjectByName(name));
-  const hand = model.getObjectByName("FistR");
+  const feet = ["LeftFoot", "RightFoot"].map(name => model.getObjectByName(name));
+  const hand = model.getObjectByName("RightHand");
+  model.traverse(mesh => {
+    if (!mesh.isSkinnedMesh) return;
+    mesh.material.emissiveMap = mesh.material.map;
+    mesh.material.emissive.setHex(0xffffff);
+    mesh.material.emissiveIntensity = .22;
+    mesh.material.color.setScalar(.72);
+    mesh.material.envMapIntensity = .24;
+  });
   const mic = new THREE.Group();
   const grip = new THREE.Mesh(new THREE.CylinderGeometry(.036, .027, .23, 10), new THREE.MeshStandardMaterial({
     color: 0x252840, roughness: .46,
@@ -34,10 +41,14 @@ async function loadMcSuit() {
   mic.add(grip, grille);
   grip.position.y = .05;
   grille.position.y = .174;
-  // The exported rig is taller than the classroom character; these are rig units.
-  mic.scale.setScalar(1 / .59);
-  mic.position.set(-.04, .15, .08);
-  mic.rotation.x = -.5;
+  walk.setEffectiveWeight(0);
+  gesture.setEffectiveWeight(0);
+  mixer.update(0);
+  const wrist = hand.getWorldPosition(v3());
+  mic.position.copy(hand.worldToLocal(wrist.add(v3(0, -.025, .018))));
+  mic.scale.setScalar(1 / hand.getWorldScale(v3()).x);
+  mic.quaternion.copy(hand.getWorldQuaternion(new THREE.Quaternion()).invert())
+    .multiply(new THREE.Quaternion().setFromAxisAngle(v3(1, 0, 0), 2.60));
   hand.add(mic);
   const shadow = new THREE.Mesh(new THREE.PlaneGeometry(.95, .72), new THREE.MeshBasicMaterial({
     map: V.tex.glow, color: 0x100c24, opacity: .56, transparent: true, depthWrite: false,
@@ -66,6 +77,7 @@ function mixMcSuit(host, walkTime, idleTime, gestureTime = 0, gestureWeight = 0)
   host.idle.setEffectiveWeight(intoIdle);
   host.gesture.setEffectiveWeight(gestureWeight * intoIdle);
   host.mixer.update(0);
+  return intoIdle;
 }
 
 function mcSuitPlantCorrection(host, plant, target) {
@@ -75,8 +87,7 @@ function mcSuitPlantCorrection(host, plant, target) {
 }
 
 function prepareMcSuitWalk(host) {
-  host.model.scale.set(.59, .59, host.path.getLength() / (MC_STEP_COUNT * MC_SUIT_STRIDE));
-  host.model.position.y = .014;
+  host.model.scale.z = host.path.getLength() / (MC_STEP_COUNT * MC_SUIT_STRIDE);
   host.plants = [];
   for (let step = 0; step <= MC_STEP_COUNT; step++) {
     const t = step * MC_STEP_INTERVAL;
@@ -97,7 +108,7 @@ function prepareMcSuitWalk(host) {
 
 function poseMcSuit(host, t, idleTime, gestureTime = 0, gestureWeight = 0) {
   const at = Math.min(t, MC_WALK_END);
-  mixMcSuit(host, at, idleTime, gestureTime, gestureWeight);
+  const intoIdle = mixMcSuit(host, at, idleTime, gestureTime, gestureWeight);
   const step = Math.min(MC_STEP_COUNT, Math.floor((at + MC_SUIT_PLANT_BLEND) / MC_STEP_INTERVAL));
   const plant = host.plants[step];
   host.gait.position.set(0, 0, 0);
@@ -110,5 +121,7 @@ function poseMcSuit(host, t, idleTime, gestureTime = 0, gestureWeight = 0) {
     correction.lerp(mcSuitPlantCorrection(host, previous, host.previous), 1 - transition);
   }
   // Keep the planted foot in place around the bend. The clip supplies the foot roll and knee motion.
+  // The two poses each clear the floor; interpolating the bent knee can lower the sole.
+  correction.y = .116 * intoIdle * (1 - intoIdle);
   host.gait.position.copy(correction);
 }
