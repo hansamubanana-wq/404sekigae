@@ -731,7 +731,7 @@ const FLY_NEEDS = { decoy: 1, clone: 2, bounce: 1 };
 let introDeck, flyDeck, lastIntro = null, lastFly = null;
 function resetDecks() {
   introDeck = new Deck(INTRO_LIST);
-  flyDeck = new Deck(FLY_LIST);
+  flyDeck = new Deck(FLY_LIST.filter(name => ENABLE_CAT || name !== "cat"));
   lastIntro = lastFly = null;
 }
 resetDecks();
@@ -772,7 +772,8 @@ async function announce(s, key, index, total, force = {}) {
   const label = index === total ? "ラスト！" : `${index}人目`;
   const others = pendingOthers(key);
   const intro = force.intro || introDeck.draw(x => x !== lastIntro && (x !== "drum" || others.length >= 1));
-  const fly = force.fly || flyDeck.draw(x => x !== lastFly && (FLY_NEEDS[x] || 0) <= others.length && !(intro === "meteor" && x === "meteorDrop"));
+  const forcedFly = ENABLE_CAT || force.fly !== "cat" ? force.fly : null;
+  const fly = forcedFly || flyDeck.draw(x => x !== lastFly && (FLY_NEEDS[x] || 0) <= others.length && !(intro === "meteor" && x === "meteorDrop"));
   lastIntro = intro; lastFly = fly;
 
   setHero(s, label);

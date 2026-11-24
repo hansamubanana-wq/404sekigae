@@ -1035,7 +1035,7 @@ const TRAVEL_NEEDS = { decoy: 1 };
 let introDeck2 = null, travelDeck2 = null, lastI2 = null, lastT2 = null, pairCount = 0, pairTotal = 0;
 function resetPairDeck(total = 0) {
   introDeck2 = new Deck(Object.keys(INTRO2));
-  travelDeck2 = new Deck(Object.keys(TRAVEL2));
+  travelDeck2 = new Deck(Object.keys(TRAVEL2).filter(name => ENABLE_CAT || name !== "cats"));
   lastI2 = lastT2 = null;
   pairCount = 0;
   pairTotal = total;
@@ -1045,7 +1045,8 @@ function resetPairDeck(total = 0) {
 async function announcePair(list, force = {}) {
   const pending = pendingExcept(list).length;
   const intro = force.intro || introDeck2.draw(x => x !== lastI2);
-  const travel = force.travel || travelDeck2.draw(x => x !== lastT2 && (TRAVEL_NEEDS[x] || 0) <= pending);
+  const forcedTravel = ENABLE_CAT || force.travel !== "cats" ? force.travel : null;
+  const travel = forcedTravel || travelDeck2.draw(x => x !== lastT2 && (TRAVEL_NEEDS[x] || 0) <= pending);
   lastI2 = intro; lastT2 = travel;
   const { k, xs } = pairLayout(list.length);
   const labels = list.map((_, i) => pairCount + i + 1 === pairTotal ? "ラスト！" : `${pairCount + i + 1}人目`);
@@ -1100,7 +1101,7 @@ async function warmUpShaders() {
   const actors = [
     wind, ufo.g, stageActor(buildRocket), stageActor(buildClock), stageActor(buildZs),
     stageActor(showRingRig), stageActor(showCrystalRig), stageActor(showConstellation), stageActor(showLightRails),
-    ...CAT_COATS.map(coat => stageActor(buildCat, coat)),
+    ...(ENABLE_CAT ? CAT_COATS.map(coat => stageActor(buildCat, coat)) : []),
   ];
   const glass = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), new THREE.ShaderMaterial({
     vertexShader: GLASS_VERT, fragmentShader: GLASS_FRAG,
