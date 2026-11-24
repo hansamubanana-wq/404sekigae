@@ -15,6 +15,7 @@ const MC_BGM_ATTACK = .045;
 const MC_BGM_SETTLE = 3.4;
 const SFX_VOLUME = .85;     // 効果音全体の音量 (BGM とのバランス)
 const MC_RISE_SECONDS = 1.10;
+const MASTER_LOOKAHEAD = .006;  // DynamicsCompressorNode の固定先読み
 const BGM = { files: new Map(), main: null, request: null, playing: null };
 
 // iPad / iPhone のマナーモードでも鳴らす (Safari 16.4+)
@@ -45,6 +46,15 @@ function soundInit() {
 function soundUnlock() {
   soundInit();
   if (SND.ctx && SND.ctx.state !== "running") return SND.ctx.resume().catch(() => {});
+}
+
+function audioOutputTime(ctx, wallTime = performance.now()) {
+  const stamp = ctx.getOutputTimestamp?.();
+  if (stamp?.performanceTime > 0 && Number.isFinite(stamp.contextTime)) {
+    return Math.min(ctx.currentTime, stamp.contextTime + (wallTime - stamp.performanceTime) / 1000) - MASTER_LOOKAHEAD;
+  }
+  // 出力タイムスタンプが使えないブラウザでは、報告された遅延を引く。
+  return ctx.currentTime - (ctx.baseLatency || 0) - (ctx.outputLatency || 0) - MASTER_LOOKAHEAD;
 }
 
 function soundLoad() {
@@ -86,12 +96,13 @@ function playSfxBuffer(buf, o = {}) {
     node = node.connect(p);
   }
   node.connect(SND.master);
-  const t0 = ctx.currentTime + (o.delay || 0);
+  const t0 = o.at ?? ctx.currentTime + (o.delay || 0);
   src.start(t0);
   return {
     stop(fade = .3) {
       try {
         const t = ctx.currentTime;
+        if (t < t0) { src.stop(t); return; }
         g.gain.cancelScheduledValues(t);
         g.gain.setValueAtTime(g.gain.value, t);
         g.gain.linearRampToValueAtTime(0, t + fade);
@@ -107,7 +118,6 @@ function buildMcTransitionSounds(ctx) {
   const rate = ctx.sampleRate;
   const rise = ctx.createBuffer(1, Math.round(rate * MC_RISE_SECONDS), rate);
   const hit = ctx.createBuffer(1, Math.round(rate * .52), rate);
-  const foot = ctx.createBuffer(1, Math.round(rate * .48), rate);
   const ramp = rise.getChannelData(0), strike = hit.getChannelData(0);
   let low = 0, bright = 0, phase = 0;
   let seed = 404;
@@ -133,23 +143,42 @@ function buildMcTransitionSounds(ctx) {
     strike[i] = envelope * (Math.sin(phase) * .61 * Math.exp(-t * 14) +
       (white - low) * .40 * Math.exp(-t * 8));
   }
-  const footfall = foot.getChannelData(0);
-  let tap = 0, rumblePhase = 0;
-  for (let i = 0; i < footfall.length; i++) {
-    const t = i / rate;
-    const white = noise();
-    tap += .39 * (white - tap);
-    rumblePhase += 2 * Math.PI * (66 + 65 * Math.exp(-45 * t)) / rate;
-    const attack = Math.min(1, t / .003);
-    footfall[i] = attack * (.57 * Math.sin(rumblePhase) * Math.exp(-29 * t) +
-      .57 * (white - tap) * Math.exp(-66 * t) + .17 * Math.sin(2 * Math.PI * 780 * t) * Math.exp(-43 * t));
+  return { rise, hit, footLeft: buildMcHeelToe(ctx, noise, .96), footRight: buildMcHeelToe(ctx, noise, 1.04) };
+}
+
+function buildMcHeelToe(ctx, noise, tone) {
+  const rate = ctx.sampleRate;
+  const step = ctx.createBuffer(1, Math.round(rate * .38), rate);
+  const samples = step.getChannelData(0);
+  const direct = new Float32Array(samples.length);
+  const lowMix = 1 - Math.exp(-2 * Math.PI * 390 / rate);
+  const highMix = 1 - Math.exp(-2 * Math.PI * 3250 / rate);
+  const tap = (at, weight, heel) => {
+    const start = Math.round(at * rate);
+    let low = 0, high = 0;
+    for (let i = 0; i < .105 * rate; i++) {
+      const t = i / rate, white = noise();
+      low += lowMix * (white - low);
+      high += highMix * (white - high);
+      const wood = .51 * Math.sin(2 * Math.PI * (heel ? 193 : 251) * tone * t) * Math.exp(-t * 65) +
+        .29 * Math.sin(2 * Math.PI * (heel ? 384 : 512) * tone * t) * Math.exp(-t * 115) +
+        .17 * Math.sin(2 * Math.PI * 850 * tone * t) * Math.exp(-t * 155);
+      const leather = .49 * (high - low) * Math.exp(-t * (heel ? 99 : 73));
+      direct[start + i] += Math.min(1, t / .0014) * weight * (wood + leather);
+    }
+  };
+  tap(0, 1, true);
+  tap(.052 / tone, .48, false);
+  samples.set(direct);
+  // 同じ打音の短い反射だけを重ねる。長いエコーや低い持続音は入れない。
+  for (const [seconds, gain] of [[.019,.16],[.034,-.12],[.074,.10],[.091,.074],[.129,-.051],[.168,.033],[.208,.019]]) {
+    const delay = Math.round(seconds * rate);
+    for (let i = delay; i < samples.length; i++) samples[i] += direct[i - delay] * gain;
   }
-  // 硬い床の反射と、短く残る教室の響き。
-  for (const [delay, gain] of [[.045, .32], [.081, .24], [.132, .19], [.188, .13], [.259, .09]]) {
-    const offset = Math.round(delay * rate);
-    for (let i = footfall.length - 1; i >= offset; i--) footfall[i] += footfall[i - offset] * gain;
-  }
-  return { rise, hit, foot };
+  let peak = 0;
+  for (const sample of samples) peak = Math.max(peak, Math.abs(sample));
+  for (let i = 0; i < samples.length; i++) samples[i] *= .76 / peak;
+  return step;
 }
 
 function mcTransitionSfx(name, options) {

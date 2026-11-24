@@ -11,6 +11,9 @@ const MC_SUBTITLE_OUT = 13.28;
 const MC_RISE_AT = 12.68;
 const MC_END = 13.34;
 const MC_WALK_END = 4.14;
+const MC_STEP_INTERVAL = .65;
+const MC_STEP_COUNT = 6;
+const MC_LAST_STEP = MC_STEP_INTERVAL * MC_STEP_COUNT;
 const MC_GREETING_AT = 4.95;
 const MC_GREETING_CUT = 3.16;  // 1文目と2文目の間の無音
 const MC_DIALOGUE_RESUME = 3.49;
@@ -19,7 +22,7 @@ const MC_THANKS_AT = MC_GREETING_AT + 4.03;
 const MC_THANKS_CAPTION = "本日はお集まりいただき、ありがとうございます！";
 const MC_MUSIC_START_OFFSET = 1.32;  // 「START」の頭
 const MC_MUSIC_CAPTION = "MUSIC START!!";
-// bgm_main.m4a の冒頭を PCM に展開し、打音の立ち上がりから測った拍。
+// bgm_main.m4a の冒頭を PCM に展開し、帯域スペクトルと短時間 RMS の両方から測った拍。
 const MC_MUSIC_BPM = 146.5;
 const MC_FIRST_BEAT = .284;
 const MC_BEAT_SECONDS = 60 / MC_MUSIC_BPM;
@@ -78,17 +81,35 @@ async function loadMcHost() {
   host.armRotation = new THREE.Quaternion();
   // 教卓の幅は3.4。左端の外を通って黒板側へ回り、最後は生徒側を向く。
   host.path = new THREE.CatmullRomCurve3([
-    v3(-5.60, 0, PODIUM_Z + 1.06),
-    v3(-3.65, 0, PODIUM_Z + 1.06),
-    v3(-2.36, 0, PODIUM_Z + .84),
-    v3(-2.37, 0, PODIUM_Z - .45),
-    v3(-1.85, 0, PODIUM_Z - 1.17),
+    v3(-2.84, 0, PODIUM_Z - .39),
+    v3(-2.31, 0, PODIUM_Z - .90),
+    v3(-1.80, 0, PODIUM_Z - 1.17),
     v3(-.14, 0, PODIUM_Z - 1.20),
   ]);
   host.routeLength = host.path.getLength();
+  for (const [index, leg] of host.legs.entries()) {
+    leg.marks = [mcFootMark(host, leg.side, 0, 0)];
+    for (let step = index + 1; step <= MC_STEP_COUNT; step += 2) {
+      const at = step * MC_STEP_INTERVAL;
+      const pace = step >= MC_STEP_COUNT - 1 ? 1 : clamp01(mcWalkPace(at) + .16 / host.routeLength);
+      leg.marks.push(mcFootMark(host, leg.side, at, pace));
+    }
+  }
   host.path.getPointAt(1, host.actor.position);
-  poseMc(host, 0, 0, 0, 0);
+  poseMc(host, 0, MC_WALK_END, 0, 0);
   return host;
+}
+
+function mcWalkPace(t) {
+  return clamp01((t - .15) / (MC_LAST_STEP - .37));
+}
+
+function mcFootMark(host, side, at, pace) {
+  const position = host.path.getPointAt(pace);
+  const tangent = host.path.getTangentAt(pace);
+  const yaw = pace < 1 ? Math.atan2(tangent.x, tangent.z) : 0;
+  position.add(v3(side * .137, .130, 0).applyAxisAngle(v3(0, 1, 0), yaw));
+  return { at, position, yaw };
 }
 
 function mcVoiceLevel(meter, wave) {
@@ -245,11 +266,14 @@ function mcCamera(rig, actor, t, dialogue, short, offset, musicHit, anticipation
   const punch = Math.max(musicHit, ease.out(clamp01((dialogue - (MC_FANFARE_AT - .15)) / .31)));
   const pullBackAt = MC_LINES[2].at + (short ? .16 : 0);
   const wide = Math.max(musicWide, ease.inOut(clamp01((dialogue - pullBackAt) / (MC_END - pullBackAt))));
-  const x = lerp(lerp(4.85, 4.45, tracking), lerp(1.02, .55, punch), settle);
-  const y = lerp(lerp(.70, 1.28, tracking), lerp(1.70, 1.82, punch), settle);
-  const z = lerp(lerp(.49, 1.02, tracking), lerp(3.77, 2.73, punch), settle);
+  const x = lerp(lerp(3.85, 3.90, tracking), lerp(1.02, .55, punch), settle);
+  const y = lerp(lerp(.74, 1.18, tracking), lerp(1.70, 1.82, punch), settle);
+  const z = lerp(3.77, 2.73, punch);
   const fit = clamp01((1.15 - camera.aspect) / .62);
-  const cameraZ = Math.max(actor.position.z + z * (1 + fit * .45) - .18 * anticipation, PODIUM_Z + 1.05);
+  // 歩き出しは黒板側から足元を映し、カメラを横から手前へ回す。
+  const walkZ = actor.position.z - .75;
+  const frontZ = Math.max(actor.position.z + z * (1 + fit * .45) - .18 * anticipation, PODIUM_Z + 1.05);
+  const cameraZ = lerp(walkZ, frontZ, settle);
   camera.position.set(actor.position.x + x * (1 + fit * .24), y, cameraZ);
   aim.set(actor.position.x, lerp(lerp(.96, .97, tracking), lerp(1.48, 1.58, punch), settle), actor.position.z);
   camera.lookAt(aim);
@@ -329,7 +353,8 @@ async function playMcIntro(unlocked) {
   const spotPower = V.spotPower;
   const warm = V.roomWarmLight.intensity;
   const signVisible = V.podiumSign.visible;
-  let line = -1, step = 0, fanfare = false, voiceLevel = 0, watchdog, rise, footSound, dialogueDucked = false;
+  let line = -1, fanfare = false, voiceLevel = 0, watchdog, rise, dialogueDucked = false;
+  const footsteps = [];
   let resolve;
   const complete = new Promise(done => { resolve = done; });
   const finish = () => resolve(false);
@@ -344,13 +369,12 @@ async function playMcIntro(unlocked) {
     const nextLine = cues.findLastIndex(cue => t >= cue.at);
     const lead = (cues[nextLine + 1]?.at ?? Infinity) - t;
     const anticipation = withMusicCall && t >= MC_WALK_END && lead < .9 ? Math.sin(Math.PI * lead / .9) : 0;
-    const pace = clamp01((t - .09) / (MC_WALK_END - .09));
+    const pace = mcWalkPace(t);
     host.path.getPointAt(pace, host.actor.position);
     host.path.getTangentAt(pace, heading);
-    const turn = ease.inOut(clamp01((t - 3.56) / .75));
+    const turn = ease.inOut(clamp01((t - 3.12) / 1.02));
     host.actor.rotation.y = lerp(Math.atan2(heading.x, heading.z), 0, turn);
     const walking = (1 - ease.out(clamp01((t - 3.90) / .24))) * clamp01(t / .28);
-    const distance = host.routeLength * pace;
     const musicTime = withMusicCall ? audioNow - (BGM.playing?.playbackStart ?? start + musicStartAt) : 0;
     const musicHit = withMusicCall ? ease.out(clamp01((musicTime + .18) / .25)) *
       (1 - ease.inOut(clamp01((musicTime - .46) / .65))) : 0;
@@ -361,26 +385,22 @@ async function playMcIntro(unlocked) {
     const beat = (musicTime - MC_FIRST_BEAT) / MC_BEAT_SECONDS;
     const beatIndex = Math.floor(beat);
     const phase = beat - beatIndex;
-    // 拍より前は動かさず、拍頭から1フレームほどで立ち上げて、次の拍までに戻す。
-    const pulse = beatIndex < 0 ? 0 : Math.min(phase / .04, 1) * (1 - phase) ** 3;
+    // 拍頭の最初の描画で最大に近づけ、次の拍までに戻す。
+    const sinceBeat = phase * MC_BEAT_SECONDS;
+    const pulse = beatIndex < 0 ? 0 : clamp01(sinceBeat / .002) * (1 - clamp01((sinceBeat - .002) / .28)) ** 2;
     const sway = beatIndex % 2 === 0 ? pulse : -pulse;
     const inSpeech = (dialogue >= MC_LINES[0].at && dialogue < host.voice.duration) || musicMic > 0;
     const speaking = inSpeech ? mcVoiceLevel(meter, wave) : 0;
     voiceLevel = lerp(voiceLevel, speaking, .47);
     const wide = mcCamera(rig, host.actor, t, dialogue, short, offset, musicHit, anticipation, musicWide, sway, pulse);
     const angle = Math.atan2(camera.position.x - host.actor.position.x, camera.position.z - host.actor.position.z) - host.actor.rotation.y;
-    poseMc(host, dialogue, distance, walking, voiceLevel, Math.atan2(Math.sin(angle), Math.cos(angle)),
+    poseMc(host, dialogue, Math.min(t, MC_WALK_END), walking, voiceLevel, Math.atan2(Math.sin(angle), Math.cos(angle)),
       musicHit, musicMic, anticipation, Math.sin(t * 2.8));
     V.spotFocusAt.copy(host.actor.position);
     V.spotFocus = .43 * (1 - wide);
     V.spotPower = lerp(spotPower * .32, spotPower, wide);
     V.roomWarmLight.intensity = warm * (lerp(.45, 1, wide) + .13 * musicWide * pulse);
 
-    const footfall = Math.floor((distance + .17) / .58);
-    if (!short && walking > .08 && footfall > step) {
-      footSound = mcTransitionSfx("foot", { vol: .89, pan: -.48 + pace * .48, vary: .13 });
-      step = footfall;
-    }
     if (withMusicCall && !dialogueDucked && t >= middleAt) {
       dialogueDucked = true;
       bgmDuck(true, .59);
@@ -418,11 +438,21 @@ async function playMcIntro(unlocked) {
       if (duration === undefined) voices[i].start(when, from);
       else voices[i].start(when, from, duration);
     });
+    if (!short) {
+      for (let step = 1; step <= MC_STEP_COUNT; step++) {
+        const left = step % 2 === 1;
+        footsteps.push(mcTransitionSfx(left ? "footLeft" : "footRight", {
+          at: start + step * MC_STEP_INTERVAL,
+          vol: left ? .88 : .80,
+          pan: -.38 + .32 * (step / MC_STEP_COUNT) + (left ? -.035 : .035),
+        }));
+      }
+    }
     rise = mcTransitionSfx("rise", { vol: .29, delay: Math.max(0, start + lastShift + MC_RISE_AT - offset - ctx.currentTime) });
     mcSeen = true;
     try { sessionStorage.setItem(MC_SEEN_KEY, "1"); } catch {}
     V.camRig = () => {
-      const audioNow = ctx.currentTime;
+      const audioNow = audioOutputTime(ctx);
       const t = offset + Math.max(0, audioNow - start);
       try {
         update(Math.min(t, end), audioNow);
@@ -445,7 +475,7 @@ async function playMcIntro(unlocked) {
     if (!completed) {
       cancelMcBgmCue();
       rise?.stop(.035);
-      footSound?.stop(.08);
+      for (const footstep of footsteps) footstep?.stop(.055);
     }
     skip.removeEventListener("click", finish);
     document.removeEventListener("visibilitychange", onHidden);
