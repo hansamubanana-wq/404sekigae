@@ -138,18 +138,34 @@ function buildCat(color) {
   return g;
 }
 
-// 同じ列の1〜2台隣から来る。浮いている名札を避けるため天板の奥を通る。
+function catOffscreenX(side, lane) {
+  V.camera.updateMatrixWorld();
+  const point = v3();
+  let near = 0, far = 80;
+  for (let i = 0; i < 12; i++) {
+    const x = (near + far) / 2;
+    point.set(side * x, .45, lane).project(V.camera);
+    if (side * point.x > 1.04) far = x;
+    else near = x;
+  }
+  return side * (far + 1.40);  // 鼻先・札・しっぽまで画面の外に出す
+}
+
+// 通路から列の端へ飛び乗り、天板を渡って札を届ける。
 async function catDelivery(card, key, coat) {
   const { x, z } = seatXZ(key);
   const [row, col] = key.split("-").map(Number);
-  const neighbors = [-1, 1].filter(d => realSeatPositions.includes(`${row}-${col + d}`));
-  const far = neighbors.filter(d => realSeatPositions.includes(`${row}-${col + d * 2}`));
-  const side = pick(far.length ? far : neighbors) ?? -1;
-  const hops = far.length ? 2 : neighbors.length ? 1 : 0;
+  const columns = realSeatPositions.filter(seat => seat.startsWith(`${row}-`)).map(seat => Number(seat.split("-")[1]));
+  const left = Math.min(...columns), right = Math.max(...columns);
+  const side = col - left === right - col ? pick([-1, 1]) : col - left < right - col ? -1 : 1;
+  const first = side < 0 ? left : right;
+  const hops = Math.abs(col - first);
   const dir = -side;
   const start = x + side * SX * hops;
   const level = DESK_SURFACE_Y + .016;
+  const floor = .016;
   const lane = z - .205;
+  const exitLane = z - SZ / 2;
   // 通り道の名札は天板の手前に下げ、名前や「?」が読める状態で猫を通す。
   const routePlates = Array.from({ length: hops + 1 }, (_, i) => {
     const seat = V.seat[`${row}-${col + side * i}`];
@@ -158,7 +174,7 @@ async function catDelivery(card, key, coat) {
   const cat = stageActor(buildCat, coat);
   V.scene.add(cat);
   cat.scale.setScalar(1.16);
-  cat.position.set(hops ? start + dir * .18 : x + side * .18, level, lane);
+  cat.position.set(catOffscreenX(side, lane), floor, lane);
   cat.rotation.y = dir > 0 ? 0 : Math.PI;
   const motion = cat.userData;
   const pitchAxis = v3(1);
@@ -174,9 +190,8 @@ async function catDelivery(card, key, coat) {
     card.position.copy(V.stage.worldToLocal(gripOffset));
     card.quaternion.copy(V.stage.quaternion).invert().multiply(worldTurn);
   };
-  const walk = async end => {
+  const walk = async (end, ms = 75 + Math.abs(end - cat.position.x) * 190) => {
     const from = cat.position.x;
-    const ms = 75 + Math.abs(end - from) * 190;
     motion.run = true;
     sfx("step", { vol: .19, rate: 1.65, vary: .13 });
     await tween(ms, t => { cat.position.x = lerp(from, end, t); }, ease.linear);
@@ -197,9 +212,21 @@ async function catDelivery(card, key, coat) {
       if (carrying) positionCard(motion.mouth.getWorldPosition(grip), -1);
       else positionCard(contact, 1);
     });
+    const approach = start + side * 2.14;
+    await walk(approach, 390);
+    const firstDesk = start - dir * .20;
+    await tween(295, t => {
+      motion.jump = Math.sin(t * Math.PI);
+      cat.position.set(
+        lerp(approach, firstDesk, clamp01((t - .16) / .84)),
+        lerp(floor, level, ease.out(clamp01(t / .58))) + .34 * motion.jump,
+        lane,
+      );
+    }, ease.linear);
+    motion.jump = 0;
     for (let i = 0; i < hops; i++) {
       const desk = start + dir * i * SX;
-      if (i > 0) {
+      if (i > 0 && i === hops - 1) {
         // 隣の席で一瞬迷い、首を振ってから次の机へ進む。
         await walk(desk);
         motion.search = true;
@@ -231,6 +258,18 @@ async function catDelivery(card, key, coat) {
       tilt = lerp(contactTilt, -Math.PI / 2, clamp01(t * 2.7));
       motion.nod = 1 - t;
     }, ease.inOut);
+    const fromX = cat.position.x, fromZ = cat.position.z;
+    await tween(290, t => {
+      motion.jump = Math.sin(t * Math.PI);
+      const fall = ease.in(clamp01((t - .52) / .48));
+      cat.position.set(
+        fromX + dir * .80 * t,
+        lerp(level, floor, fall) + .26 * motion.jump,
+        lerp(fromZ, exitLane, ease.out(clamp01(t / .52))),
+      );
+    }, ease.linear);
+    motion.jump = 0;
+    await walk(catOffscreenX(dir, exitLane), 605);
   } finally {
     stopFollowing?.();
     cat.userData.remove();
