@@ -39,9 +39,9 @@ function soundInit() {
     comp.threshold.value = -14; comp.ratio.value = 4;
     SND.master.connect(comp).connect(SND.ctx.destination);
     SND.mcTransition = buildMcTransitionSounds(SND.ctx);
-    soundLoad();
+    SND.ready = Promise.all([soundLoad(), loadMcFootsteps()]);
   }
-  return SND.loading || Promise.resolve();
+  return SND.ready;
 }
 
 // 最初のタップで鳴らせるようにする (ブラウザの決まり)
@@ -147,42 +147,28 @@ function buildMcTransitionSounds(ctx) {
     strike[i] = envelope * (Math.sin(phase) * .61 * Math.exp(-t * 14) +
       (white - low) * .40 * Math.exp(-t * 8));
   }
-  return { rise, hit, footLeft: buildMcHeelToe(ctx, noise, .96), footRight: buildMcHeelToe(ctx, noise, 1.04) };
+  return { rise, hit };
 }
 
-function buildMcHeelToe(ctx, noise, tone) {
-  const rate = ctx.sampleRate;
-  const step = ctx.createBuffer(1, Math.round(rate * .17), rate);
-  const samples = step.getChannelData(0);
-  const direct = new Float32Array(samples.length);
-  const lowMix = 1 - Math.exp(-2 * Math.PI * 1050 / rate);
-  const highMix = 1 - Math.exp(-2 * Math.PI * 5800 / rate);
-  const tap = (at, weight, heel) => {
-    const start = Math.round(at * rate);
-    let low = 0, high = 0;
-    for (let i = 0; i < .063 * rate; i++) {
-      const t = i / rate, white = noise();
-      low += lowMix * (white - low);
-      high += highMix * (white - high);
-      const floor = .19 * Math.sin(2 * Math.PI * (heel ? 570 : 710) * tone * t) * Math.exp(-t * 140) +
-        .31 * Math.sin(2 * Math.PI * 1450 * tone * t) * Math.exp(-t * 220) +
-        .16 * Math.sin(2 * Math.PI * 2770 * tone * t) * Math.exp(-t * 330);
-      const click = .87 * (high - low) * Math.exp(-t * (heel ? 165 : 185));
-      direct[start + i] += Math.min(1, t / .00065, (.063 - t) / .009) * weight * (floor + click);
+async function loadMcFootsteps() {
+  SND.mcFootsteps = await Promise.all([1, 2, 3, 4].map(async number => {
+    try {
+      const response = await fetch(`media/mc/steps/step-${number}.m4a`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return await SND.ctx.decodeAudioData(await response.arrayBuffer());
+    } catch (error) {
+      console.warn(`司会者の足音 ${number} を読み込めませんでした`, error);
+      return null;
     }
-  };
-  tap(0, 1, true);
-  tap(MC_SOLE_AT, .36, false);
-  samples.set(direct);
-  // 同じ打音の短い反射だけを重ねる。長いエコーや低い持続音は入れない。
-  for (const [seconds, gain] of [[.013,.065],[.027,-.04],[.048,.026]]) {
-    const delay = Math.round(seconds * rate);
-    for (let i = delay; i < samples.length; i++) samples[i] += direct[i - delay] * gain;
-  }
-  let peak = 0;
-  for (const sample of samples) peak = Math.max(peak, Math.abs(sample));
-  for (let i = 0; i < samples.length; i++) samples[i] *= .76 / peak;
-  return step;
+  }));
+}
+
+function mcFootstep(step, options) {
+  const steps = SND.mcFootsteps;
+  if (!steps || SND.ctx?.state !== "running") return null;
+  const index = step % steps.length;
+  const buffer = steps[index] || steps[(index + 2) % steps.length] || steps.find(Boolean);
+  return buffer ? playSfxBuffer(buffer, options) : null;
 }
 
 function mcTransitionSfx(name, options) {

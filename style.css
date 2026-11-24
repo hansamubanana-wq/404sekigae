@@ -358,6 +358,31 @@ body.letterbox::before, body.letterbox::after { transform: none; }
   z-index: 45;
   pointer-events: none;
 }
+#mcBeatControls:not([hidden]) {
+  position: fixed;
+  top: calc(max(14px, env(safe-area-inset-top)) + 54px);
+  right: max(16px, env(safe-area-inset-right));
+  z-index: 46;
+  display: flex;
+  align-items: center;
+  border-radius: 9px;
+  background: #090d19ee;
+  color: #fff4dd;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+#mcBeatControls button {
+  min-width: 48px;
+  min-height: 44px;
+  padding: 0 6px;
+}
+#mcBeatControls output {
+  min-width: 59px;
+  text-align: center;
+}
+@media print {
+  #mcBeatControls { display: none !important; }
+}
 .mc-skip {
   position: absolute;
   top: max(14px, env(safe-area-inset-top));

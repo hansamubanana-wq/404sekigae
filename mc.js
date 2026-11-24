@@ -32,7 +32,37 @@ const MC_BEATS = MC_BEAT_NUDGES.map((nudge, i) => MC_FIRST_BEAT + i * MC_BEAT_SE
 const MC_WIDE_AT = MC_BEATS[1];
 const MC_PUSH_IN_AT = MC_BEATS[8];
 const MC_NEXT_LINE_AT = MC_BEATS[10];
-const MC_BEAT_OFFSET = Math.max(-.25, Math.min(.25, Number(new URLSearchParams(location.search).get("beatOffset")) || 0));
+const MC_QUERY = new URLSearchParams(location.search);
+const MC_TUNE_BEAT = MC_QUERY.has("beatOffset");
+const MC_FULL_INTRO = MC_TUNE_BEAT || MC_QUERY.get("intro") === "1";
+const MC_BEAT_KEY = "404-mc-beat-offset";
+
+function mcBeatOffset(value) {
+  return Math.max(-25, Math.min(25, Math.round(value * 100))) / 100;
+}
+
+let mcBeatOffsetSeconds = 0;
+try { mcBeatOffsetSeconds = mcBeatOffset(Number(localStorage.getItem(MC_BEAT_KEY)) || 0); } catch {}
+const mcOffsetParam = MC_QUERY.get("beatOffset")?.trim();
+if (mcOffsetParam && Number.isFinite(Number(mcOffsetParam))) mcBeatOffsetSeconds = mcBeatOffset(Number(mcOffsetParam));
+
+if (MC_TUNE_BEAT) {
+  const controls = document.getElementById("mcBeatControls");
+  const value = controls.querySelector("output");
+  const refresh = () => { value.value = `${mcBeatOffsetSeconds > 0 ? "+" : ""}${mcBeatOffsetSeconds.toFixed(2)} s`; };
+  for (const button of controls.querySelectorAll("button")) {
+    button.addEventListener("click", () => {
+      mcBeatOffsetSeconds = mcBeatOffset(mcBeatOffsetSeconds + Number(button.dataset.delta));
+      refresh();
+      try { localStorage.setItem(MC_BEAT_KEY, String(mcBeatOffsetSeconds)); } catch {}
+      const url = new URL(location.href);
+      url.searchParams.set("beatOffset", mcBeatOffsetSeconds.toFixed(2));
+      history.replaceState(history.state, "", url);
+    });
+  }
+  refresh();
+  controls.hidden = false;
+}
 
 function mcBeatAt(musicTime) {
   return MC_BEATS.findLastIndex(at => musicTime >= at);
@@ -310,6 +340,7 @@ async function playMcIntro(unlocked) {
   const currentText = current.querySelector(".mc-text");
   let short = mcSeen;
   try { short ||= sessionStorage.getItem(MC_SEEN_KEY) === "1"; } catch {}
+  short &&= !MC_FULL_INTRO;
   const offset = short ? MC_SHORT_AT : 0;
   const main = !short && host.musicCall && (BGM.buffers.get("main") || await loadBgm("main").catch(error => {
     console.warn("司会者のBGMを読み込めませんでした", error);
@@ -323,7 +354,7 @@ async function playMcIntro(unlocked) {
   const start = ctx.currentTime + .035;
   const musicTrack = withMusicCall ? await cueMcBgm(start + musicStartAt) : null;
   const musicShift = musicTrack ? Math.max(0, musicTrack.playbackStart - start - musicStartAt) : 0;
-  const middleAt = musicStartAt + musicShift + MC_BEAT_OFFSET + MC_NEXT_LINE_AT - (MC_LINES[1].at - MC_DIALOGUE_RESUME);
+  const middleAt = musicStartAt + musicShift + MC_NEXT_LINE_AT - (MC_LINES[1].at - MC_DIALOGUE_RESUME);
   const lastAt = middleAt + (MC_DIALOGUE_CUT - MC_DIALOGUE_RESUME) + .92;
   const fallbackAt = short ? 0 : MC_WALK_END + .23;
   const lastShift = withMusicCall ? lastAt - MC_SHORT_AT : fallbackAt;
@@ -390,7 +421,7 @@ async function playMcIntro(unlocked) {
     const turn = ease.inOut(clamp01((t - 3.12) / 1.02));
     host.actor.rotation.y = lerp(Math.atan2(heading.x, heading.z), 0, turn);
     const walking = (1 - ease.out(clamp01((t - 3.90) / .24))) * clamp01(t / .28);
-    const musicTime = musicTrack ? audioNow - musicTrack.playbackStart - MC_BEAT_OFFSET : -Infinity;
+    const musicTime = musicTrack ? audioNow - musicTrack.playbackStart - mcBeatOffsetSeconds : -Infinity;
     const musicHit = musicTrack ? ease.out(clamp01((musicTime + .18) / .25)) *
       (1 - ease.inOut(clamp01((musicTime - .46) / .65))) : 0;
     const musicMic = withMusicCall ? ease.out(clamp01((t - musicCallAt + .19) / .19)) *
@@ -454,9 +485,10 @@ async function playMcIntro(unlocked) {
     if (!short) {
       for (let step = 1; step <= MC_STEP_COUNT; step++) {
         const left = step % 2 === 1;
-        footsteps.push(mcTransitionSfx(left ? "footLeft" : "footRight", {
+        footsteps.push(mcFootstep(step - 1, {
           at: start + step * MC_STEP_INTERVAL,
-          vol: left ? .88 : .80,
+          vol: (left ? .88 : .80) * rand(.94, 1.06),
+          vary: .065,
           pan: -.38 + .32 * (step / MC_STEP_COUNT) + (left ? -.035 : .035),
         }));
       }
