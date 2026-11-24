@@ -465,7 +465,7 @@ addEventListener("DOMContentLoaded", () => {
         console.warn("司会者の素材を準備できませんでした", error);
         return null;
       });
-      await stage(3, "3D演出を準備");
+      await stage(3, "3D演出と司会者を準備");
       await warmUpShaders().catch(error => console.warn("演出の準備", error));
       const host = await mc;
       if (host) {
