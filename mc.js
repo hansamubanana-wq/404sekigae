@@ -24,7 +24,7 @@ const MC_THANKS_AT = MC_GREETING_AT + 4.03;
 const MC_THANKS_CAPTION = "本日はお集まりいただき、ありがとうございます！";
 const MC_MUSIC_START_OFFSET = 1.32;  // 「START」の頭
 const MC_MUSIC_CAPTION = "MUSIC START!!";
-const MC_WIDE_AT = BGM_GRID.main.first + BGM_GRID.main.beat;
+const MC_WIDE_AT = BGM_GRID.main.first + 2 * BGM_GRID.main.beat;
 const MC_PUSH_IN_AT = BGM_GRID.main.first + 8 * BGM_GRID.main.beat;
 const MC_NEXT_LINE_AT = BGM_GRID.main.first + 10 * BGM_GRID.main.beat;
 const MC_QUERY = new URLSearchParams(location.search);
@@ -219,7 +219,7 @@ function updateMcShow(dt, t) {
   if (host.mixer) poseMcSuit(host, MC_WALK_END, t, Math.max(0, elapsed) * 1.3, gesture * (reaction?.strong ? .95 : .66));
   else {
     poseMcWaiting(host, t, mcShow.voiceLevel, gesture, !!reaction?.strong);
-    grooveMc(host, speaking ? .35 : 1);
+    grooveMc(host, 1 - .65 * clamp01(mcShow.voiceLevel));
   }
 }
 
@@ -317,23 +317,23 @@ function mcShowCaption(t, cue, first, end, previous, current, box) {
   box.style.opacity = 1 - ease.inOut(clamp01((t - (end - fade)) / fade));
 }
 
-function mcCamera(rig, actor, t, dialogue, short, offset, musicHit, anticipation, musicWide) {
+function mcCamera(rig, actor, t, dialogue, short, offset, anticipation, musicWide) {
   const { camera, aim, from, fromRotation, defaultPos, defaultRotation } = rig;
   const tracking = ease.inOut(clamp01((t - .65) / 1.7));
   const settle = ease.inOut(clamp01((t - 3.73) / 1.12));
-  const punch = Math.max(musicHit, ease.out(clamp01((dialogue - (MC_FANFARE_AT - .15)) / .31)));
+  const emphasis = .32 * smoothGroove((dialogue - (MC_FANFARE_AT - .60)) / 1.2);
   const pullBackAt = MC_LINES[2].at + (short ? .16 : 0);
   const wide = Math.max(musicWide, ease.inOut(clamp01((dialogue - pullBackAt) / (MC_END - pullBackAt))));
-  const x = lerp(lerp(3.85, 3.90, tracking), lerp(1.02, .55, punch), settle);
-  const y = lerp(lerp(.74, 1.18, tracking), lerp(1.70, 1.82, punch), settle);
-  const z = lerp(3.77, 2.73, punch);
+  const x = lerp(lerp(3.85, 3.90, tracking), lerp(1.02, .55, emphasis), settle);
+  const y = lerp(lerp(.74, 1.18, tracking), lerp(1.70, 1.82, emphasis), settle);
+  const z = lerp(3.77, 2.73, emphasis);
   const fit = clamp01((1.15 - camera.aspect) / .62);
   // 歩き出しは黒板側から足元を映し、カメラを横から手前へ回す。
   const walkZ = actor.position.z - .75;
   const frontZ = Math.max(actor.position.z + z * (1 + fit * .45) - .18 * anticipation, PODIUM_Z + 1.05);
   const cameraZ = lerp(walkZ, frontZ, settle);
   camera.position.set(actor.position.x + x * (1 + fit * .24), y, cameraZ);
-  aim.set(actor.position.x, lerp(lerp(.96, .97, tracking), lerp(1.48, 1.58, punch), settle), actor.position.z);
+  aim.set(actor.position.x, lerp(lerp(.96, .97, tracking), lerp(1.48, 1.58, emphasis), settle), actor.position.z);
   camera.lookAt(aim);
   // 歩き始めは足元へのカット。教室全景から補間して教卓を横切らない。
   const enter = short ? 1 - ease.out(clamp01((t - offset) / .30)) : 0;
@@ -447,12 +447,12 @@ async function playMcIntro(unlocked) {
       (1 - ease.inOut(clamp01((musicTime - .46) / .65))) : 0;
     const musicMic = withMusicCall ? ease.out(clamp01((t - musicCallAt + .19) / .19)) *
       (1 - ease.inOut(clamp01((t - callEnd) / .20))) : 0;
-    const musicWide = musicTrack ? ease.inOut(clamp01(musicTime / MC_WIDE_AT)) *
-      ease.inOut(clamp01((MC_NEXT_LINE_AT - musicTime) / (MC_NEXT_LINE_AT - MC_PUSH_IN_AT))) : 0;
+    const musicWide = musicTrack ? smoothGroove(musicTime / MC_WIDE_AT) *
+      smoothGroove((MC_NEXT_LINE_AT - musicTime) / (MC_NEXT_LINE_AT - MC_PUSH_IN_AT)) : 0;
     const inSpeech = (dialogue >= MC_LINES[0].at && dialogue < host.voice.duration) || musicMic > 0;
     const speaking = inSpeech ? mcVoiceLevel(meter, wave) : 0;
     voiceLevel = lerp(voiceLevel, speaking, .47);
-    const wide = mcCamera(rig, host.actor, t, dialogue, short, offset, musicHit, anticipation, musicWide);
+    const wide = mcCamera(rig, host.actor, t, dialogue, short, offset, anticipation, musicWide);
     if (host.mixer) {
       const gestureTime = Math.max(0, t - (cues[line]?.at ?? t));
       const speakingGesture = voiceLevel * ease.out(clamp01((1.5 - gestureTime) / .35));
@@ -461,7 +461,7 @@ async function playMcIntro(unlocked) {
       const angle = Math.atan2(camera.position.x - host.actor.position.x, camera.position.z - host.actor.position.z) - host.actor.rotation.y;
       poseMc(host, dialogue, Math.min(t, MC_WALK_END), walking, voiceLevel, Math.atan2(Math.sin(angle), Math.cos(angle)),
         musicHit, musicMic, anticipation, Math.sin(t * 2.8));
-      grooveMc(host, (1 - walking) * (voiceLevel > .25 ? .35 : 1));
+      grooveMc(host, (1 - walking) * (1 - .65 * clamp01(voiceLevel)));
     }
     V.spotFocusAt.copy(host.actor.position);
     V.spotFocus = .43 * (1 - wide);

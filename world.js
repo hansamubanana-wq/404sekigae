@@ -1179,7 +1179,7 @@ function frame(now) {
   } else {
     const sway = V.sway.set(Math.sin(t * .23) * .18, Math.sin(t * .31) * .1, 0).applyQuaternion(V.homeQuat);
     V.camera.position.copy(V.homePos).add(V.camOffset);
-    if (!groove.power) V.camera.position.add(sway);
+    V.camera.position.addScaledVector(sway, 1 - groove.presence);
     V.camera.quaternion.copy(V.homeQuat);
   }
   grooveCamera(V.camera, now);
@@ -1192,7 +1192,7 @@ function frame(now) {
   // スポットライト
   V.spotT = (V.spotT || 0) + dt * V.spotSpeed;
   const fu = V.floor.material.uniforms;
-  const spotPower = V.spotPower * (1 + .31 * groove.pulse);
+  const spotPower = V.spotPower * (1 + .14 * groove.pulse * groove.power);
   V.spots.forEach((s, i) => {
     const a = V.spotT * .35 + s.phase;
     s.target.set(Math.sin(a) * 6.5, 0, Math.cos(a * .8 + i) * 4.2 - .6).lerp(V.spotFocusAt, V.spotFocus);
@@ -1209,7 +1209,8 @@ function frame(now) {
     const o = V.seat[key];
     o.pivot.position.x = o.base.x + (o.rippleX || 0);
     const lift = groovePlate(o, now);
-    o.pivot.position.y = o.base.y + (groove.power ? lift : Math.sin(t * 1.3 + o.phase) * .03) + (o.jump || 0) + (o.rippleY || 0);
+    const float = Math.sin(t * 1.3 + o.phase) * .03 * (1 - groove.presence);
+    o.pivot.position.y = o.base.y + lift + float + (o.jump || 0) + (o.rippleY || 0);
     o.pivot.position.z = o.base.z + (o.rippleZ || 0);
     if (o.catPlacement) {
       o.pivot.position.copy(o.catPlacement.position);
