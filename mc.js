@@ -15,8 +15,9 @@ const MC_GREETING_AT = 4.95;
 const MC_GREETING_CUT = 3.16;  // 1文目と2文目の間の無音
 const MC_DIALOGUE_RESUME = 3.49;
 const MC_DIALOGUE_CUT = 10.63;
-const MC_MUSIC_CALL_AT = MC_GREETING_AT + 4.03;
-const MC_MUSIC_START_AT = MC_MUSIC_CALL_AT + 1.32;  // 「START」の頭
+const MC_THANKS_AT = MC_GREETING_AT + 4.03;
+const MC_THANKS_CAPTION = "本日はお集まりいただき、ありがとうございます！";
+const MC_MUSIC_START_OFFSET = 1.32;  // 「START」の頭
 const MC_MUSIC_CAPTION = "MUSIC START!!";
 // bgm_main.m4a の冒頭は、.28秒から約.41秒間隔で強い拍が続く。
 const MC_MUSIC_BPM = 146;
@@ -50,18 +51,20 @@ async function decodeMcVoice(ctx, path) {
 
 async function loadMcHost() {
   const ctx = SND.ctx;
-  const [voice, { mergeGeometries }, reactions, musicCall] = await Promise.all([
+  const [voice, { mergeGeometries }, reactions, musicCall, thanks] = await Promise.all([
     decodeMcVoice(ctx, "media/mc/voice.m4a"),
     import("three/addons/utils/BufferGeometryUtils.js"),
     Promise.all(Object.keys(MC_REACTIONS).map(async name =>
       [name, await decodeMcVoice(ctx, `media/mc/react/${name}.m4a`)]
     )).then(Object.fromEntries),
     decodeMcVoice(ctx, "media/mc/music-start.m4a"),
-    document.fonts.load('900 32px "MC Noto Sans"', "MC" + MC_MUSIC_CAPTION + MC_LINES.map(line => line.text).join("")),
+    decodeMcVoice(ctx, "media/mc/thanks.m4a"),
+    document.fonts.load('900 32px "MC Noto Sans"', "MC" + MC_THANKS_CAPTION + MC_MUSIC_CAPTION + MC_LINES.map(line => line.text).join("")),
   ]);
   const host = buildMcModel(mergeGeometries);
   host.voice = voice;
   host.musicCall = musicCall;
+  host.thanks = thanks;
   host.reactions = reactions;
   if (ctx) {
     host.reactionMeter = ctx.createAnalyser();
@@ -272,7 +275,10 @@ async function playMcIntro(unlocked) {
   try { short ||= sessionStorage.getItem(MC_SEEN_KEY) === "1"; } catch {}
   const offset = short ? MC_SHORT_AT : 0;
   const withMusicCall = !short && !!host.musicCall;
-  const callEnd = MC_MUSIC_CALL_AT + (host.musicCall?.duration ?? 0);
+  const thanks = withMusicCall ? host.thanks : null;
+  const musicCallAt = MC_THANKS_AT + (thanks ? thanks.duration + .99 : 0);
+  const musicStartAt = musicCallAt + MC_MUSIC_START_OFFSET;
+  const callEnd = musicCallAt + (host.musicCall?.duration ?? 0);
   const middleAt = callEnd + .85;
   const lastAt = middleAt + (MC_DIALOGUE_CUT - MC_DIALOGUE_RESUME) + .92;
   const fallbackAt = short ? 0 : MC_WALK_END + .23;
@@ -280,13 +286,15 @@ async function playMcIntro(unlocked) {
   const end = lastShift + MC_END + (withMusicCall ? .49 : 0);
   const cues = withMusicCall ? [
     { ...MC_LINES[0], at: MC_GREETING_AT + MC_LINES[0].at },
-    { at: MC_MUSIC_CALL_AT, text: MC_MUSIC_CAPTION, lang: "en" },
+    ...(thanks ? [{ at: MC_THANKS_AT, text: MC_THANKS_CAPTION }] : []),
+    { at: musicCallAt, text: MC_MUSIC_CAPTION, lang: "en" },
     { ...MC_LINES[1], at: middleAt + MC_LINES[1].at - MC_DIALOGUE_RESUME },
     { ...MC_LINES[2], at: lastShift + MC_LINES[2].at },
   ] : MC_LINES.filter(line => line.at > offset).map(line => ({ ...line, at: line.at + fallbackAt }));
   const parts = withMusicCall ? [
     { buffer: host.voice, at: MC_GREETING_AT, from: 0, duration: MC_GREETING_CUT },
-    { buffer: host.musicCall, at: MC_MUSIC_CALL_AT, from: 0 },
+    ...(thanks ? [{ buffer: thanks, at: MC_THANKS_AT, from: 0 }] : []),
+    { buffer: host.musicCall, at: musicCallAt, from: 0 },
     { buffer: host.voice, at: middleAt, from: MC_DIALOGUE_RESUME, duration: MC_DIALOGUE_CUT - MC_DIALOGUE_RESUME },
     { buffer: host.voice, at: lastAt, from: MC_SHORT_AT },
   ] : [{ buffer: host.voice, at: fallbackAt + offset, from: offset }];
@@ -339,10 +347,10 @@ async function playMcIntro(unlocked) {
     host.actor.rotation.y = lerp(Math.atan2(heading.x, heading.z), 0, turn);
     const walking = (1 - ease.out(clamp01((t - 3.90) / .24))) * clamp01(t / .28);
     const distance = host.routeLength * pace;
-    const musicTime = t - MC_MUSIC_START_AT;
+    const musicTime = t - musicStartAt;
     const musicHit = withMusicCall ? ease.out(clamp01((musicTime + .18) / .25)) *
       (1 - ease.inOut(clamp01((musicTime - .46) / .65))) : 0;
-    const musicMic = withMusicCall ? ease.out(clamp01((t - MC_MUSIC_CALL_AT + .19) / .19)) *
+    const musicMic = withMusicCall ? ease.out(clamp01((t - musicCallAt + .19) / .19)) *
       (1 - ease.inOut(clamp01((t - callEnd) / .20))) : 0;
     const musicWide = withMusicCall ? ease.inOut(clamp01(musicTime / .68)) *
       ease.inOut(clamp01((middleAt + .06 - t) / .86)) : 0;
@@ -395,7 +403,7 @@ async function playMcIntro(unlocked) {
     document.addEventListener("visibilitychange", onHidden);
     ctx.addEventListener("statechange", onAudioState);
     bgmDuck(true, withMusicCall ? .82 : .35);
-    if (withMusicCall) cueMcBgm(start + MC_MUSIC_START_AT);
+    if (withMusicCall) cueMcBgm(start + musicStartAt);
     else bgm("main");
     parts.forEach(({ at, from, duration }, i) => {
       const when = start + at - offset;
