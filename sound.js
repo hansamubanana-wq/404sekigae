@@ -7,6 +7,12 @@
 
 const SND = { ctx: null, master: null, music: null, reactionMusic: null, list: null, buf: {}, loading: null };
 const BGM_FILES = { main: "media/bgm_main.m4a", tension: "media/bgm_tension.m4a", finale: "media/bgm_finale.m4a" };
+// Downbeat onsets measured against the fixed BPM grids in the decoded audio.
+const BGM_GRID = {
+  main: { beat: 60 / 112, first: .014 },
+  tension: { beat: 60 / 90, first: .026 },
+  finale: { beat: 60 / 124, first: .036 },
+};
 const BGM_FADE = 1.25;
 const BGM_VOLUME = { main: .36, tension: .44, finale: .6 };
 const HOME_BGM_VOLUME = .2;
@@ -16,7 +22,7 @@ const MC_BGM_SETTLE = 3.4;
 const SFX_VOLUME = .85;     // 効果音全体の音量 (BGM とのバランス)
 const MC_RISE_SECONDS = 1.10;
 const MASTER_LOOKAHEAD = .006;  // DynamicsCompressorNode の固定先読み
-const BGM = { loading: new Map(), buffers: new Map(), request: null, playing: null };
+const BGM = { loading: new Map(), buffers: new Map(), request: null, playing: null, outgoing: null };
 const APPLE_MOBILE = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
   (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 
@@ -221,10 +227,14 @@ async function bgm(name, level = BGM_VOLUME[name], cue = null) {
     src.buffer = buffer;
     src.loop = true;
     src.connect(gain).connect(SND.music);
-    src.onended = () => { src.disconnect(); gain.disconnect(); };
     const now = ctx.currentTime;
     const start = Math.max(now, cue ?? now);
-    const track = { name, src, gain, playbackStart: start, from: 0, to: 0, started: start, duration: 0 };
+    const track = { name, src, gain, playbackStart: start, cued: cue !== null, from: 0, to: 0, started: start, duration: 0 };
+    src.onended = () => {
+      if (BGM.outgoing === track) BGM.outgoing = null;
+      src.disconnect();
+      gain.disconnect();
+    };
     if (cue !== null) {
       gain.gain.setValueAtTime(0, start);
       gain.gain.linearRampToValueAtTime(MC_BGM_PEAK, start + MC_BGM_ATTACK);
@@ -245,12 +255,24 @@ async function bgm(name, level = BGM_VOLUME[name], cue = null) {
   }
 }
 
+function bgmLevelAt(track, at) {
+  if (!track || at < track.playbackStart) return 0;
+  const t = track.duration ? Math.min(1, Math.max(0, (at - track.started) / track.duration)) : 1;
+  return track.introPeak > at
+    ? MC_BGM_PEAK * Math.max(0, 1 - (track.introPeak - at) / MC_BGM_ATTACK)
+    : track.from + (track.to - track.from) * t;
+}
+
+function bgmBeatTrack(at) {
+  const current = bgmLevelAt(BGM.playing, at);
+  const outgoing = bgmLevelAt(BGM.outgoing, at);
+  if (Math.max(current, outgoing) < .009) return null;
+  return outgoing > current ? BGM.outgoing : BGM.playing;
+}
+
 function rampBgm(track, target, duration) {
   const now = SND.ctx.currentTime;
-  const t = track.duration ? Math.min(1, Math.max(0, (now - track.started) / track.duration)) : 1;
-  const level = track.introPeak > now
-    ? MC_BGM_PEAK * Math.max(0, 1 - (track.introPeak - now) / MC_BGM_ATTACK)
-    : track.from + (track.to - track.from) * t;
+  const level = bgmLevelAt(track, now);
   const volume = track.gain.gain;
   volume.cancelScheduledValues(now);
   volume.setValueAtTime(level, now);
@@ -261,6 +283,7 @@ function rampBgm(track, target, duration) {
 
 function fadeOutBgm(track, fade) {
   if (!track) return;
+  BGM.outgoing = track;
   rampBgm(track, 0, fade);
   track.src.stop(SND.ctx.currentTime + fade);
 }

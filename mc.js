@@ -24,15 +24,9 @@ const MC_THANKS_AT = MC_GREETING_AT + 4.03;
 const MC_THANKS_CAPTION = "本日はお集まりいただき、ありがとうございます！";
 const MC_MUSIC_START_OFFSET = 1.32;  // 「START」の頭
 const MC_MUSIC_CAPTION = "MUSIC START!!";
-const MC_MUSIC_BPM = 112;
-const MC_FIRST_BEAT = .014;
-const MC_BEAT_SECONDS = 60 / MC_MUSIC_BPM;
-// PCM のキックとスネアの立ち上がり。冒頭の揺れを112 BPMの格子からの差分で残す。
-const MC_BEAT_NUDGES = [0, .004, .017, .031, .033, .037, .042, .078, .078, .083, .095];
-const MC_BEATS = MC_BEAT_NUDGES.map((nudge, i) => MC_FIRST_BEAT + i * MC_BEAT_SECONDS + nudge);
-const MC_WIDE_AT = MC_BEATS[1];
-const MC_PUSH_IN_AT = MC_BEATS[8];
-const MC_NEXT_LINE_AT = MC_BEATS[10];
+const MC_WIDE_AT = BGM_GRID.main.first + BGM_GRID.main.beat;
+const MC_PUSH_IN_AT = BGM_GRID.main.first + 8 * BGM_GRID.main.beat;
+const MC_NEXT_LINE_AT = BGM_GRID.main.first + 10 * BGM_GRID.main.beat;
 const MC_QUERY = new URLSearchParams(location.search);
 const MC_TUNE_BEAT = MC_QUERY.has("beatOffset");
 const MC_FULL_INTRO = MC_TUNE_BEAT || MC_QUERY.get("intro") === "1";
@@ -65,9 +59,6 @@ if (MC_TUNE_BEAT) {
   controls.hidden = false;
 }
 
-function mcBeatAt(musicTime) {
-  return MC_BEATS.findLastIndex(at => musicTime >= at);
-}
 const MC_SEEN_KEY = "404-mc-intro-seen";
 const MC_REACTIONS = {
   good: "GOOD!!",
@@ -222,7 +213,10 @@ function updateMcShow(dt, t) {
     : 0;
   if (!host.actor.visible) return;
   if (host.mixer) poseMcSuit(host, MC_WALK_END, t, Math.max(0, elapsed) * 1.3, gesture * (reaction?.strong ? .95 : .66));
-  else poseMcWaiting(host, t, mcShow.voiceLevel, gesture, !!reaction?.strong);
+  else {
+    poseMcWaiting(host, t, mcShow.voiceLevel, gesture, !!reaction?.strong);
+    grooveMc(host, speaking ? .35 : 1);
+  }
 }
 
 function mcSeatLanded(key) {
@@ -319,8 +313,8 @@ function mcShowCaption(t, cue, first, end, previous, current, box) {
   box.style.opacity = 1 - ease.inOut(clamp01((t - (end - fade)) / fade));
 }
 
-function mcCamera(rig, actor, t, dialogue, short, offset, musicHit, anticipation, musicWide, sway, pulse) {
-  const { camera, aim, from, fromRotation, defaultPos, defaultRotation, shift } = rig;
+function mcCamera(rig, actor, t, dialogue, short, offset, musicHit, anticipation, musicWide) {
+  const { camera, aim, from, fromRotation, defaultPos, defaultRotation } = rig;
   const tracking = ease.inOut(clamp01((t - .65) / 1.7));
   const settle = ease.inOut(clamp01((t - 3.73) / 1.12));
   const punch = Math.max(musicHit, ease.out(clamp01((dialogue - (MC_FANFARE_AT - .15)) / .31)));
@@ -341,8 +335,6 @@ function mcCamera(rig, actor, t, dialogue, short, offset, musicHit, anticipation
   const enter = short ? 1 - ease.out(clamp01((t - offset) / .30)) : 0;
   camera.position.lerp(from, enter).lerp(defaultPos, wide);
   camera.quaternion.slerp(fromRotation, enter).slerp(defaultRotation, wide);
-  shift.set(.095 * sway, 0, -.16 * pulse).multiplyScalar(musicWide).applyQuaternion(defaultRotation);
-  camera.position.add(shift);
   return wide;
 }
 
@@ -414,7 +406,7 @@ async function playMcIntro(unlocked) {
   const camera = V.camera;
   const defaultPos = V.homePos.clone().add(V.camOffset);
   const defaultRotation = V.homeQuat.clone();
-  const rig = { camera, defaultPos, defaultRotation, from: camera.position.clone(), fromRotation: camera.quaternion.clone(), aim: v3(), shift: v3() };
+  const rig = { camera, defaultPos, defaultRotation, from: camera.position.clone(), fromRotation: camera.quaternion.clone(), aim: v3() };
   const heading = v3();
   const light = V.spotFocusAt.clone();
   const focus = V.spotFocus;
@@ -453,16 +445,10 @@ async function playMcIntro(unlocked) {
       (1 - ease.inOut(clamp01((t - callEnd) / .20))) : 0;
     const musicWide = musicTrack ? ease.inOut(clamp01(musicTime / MC_WIDE_AT)) *
       ease.inOut(clamp01((MC_NEXT_LINE_AT - musicTime) / (MC_NEXT_LINE_AT - MC_PUSH_IN_AT))) : 0;
-    const beatIndex = mcBeatAt(musicTime);
-    const sinceBeat = musicTime - MC_BEATS[beatIndex];
-    // 拍頭を最大にし、小節の1拍目は少し強くする。
-    const accent = beatIndex % 4 === 0 ? 1 : beatIndex % 2 === 0 ? .75 : .58;
-    const pulse = beatIndex < 0 ? 0 : accent * (1 - clamp01(sinceBeat / .25)) ** 2;
-    const sway = beatIndex % 2 === 0 ? pulse : -pulse;
     const inSpeech = (dialogue >= MC_LINES[0].at && dialogue < host.voice.duration) || musicMic > 0;
     const speaking = inSpeech ? mcVoiceLevel(meter, wave) : 0;
     voiceLevel = lerp(voiceLevel, speaking, .47);
-    const wide = mcCamera(rig, host.actor, t, dialogue, short, offset, musicHit, anticipation, musicWide, sway, pulse);
+    const wide = mcCamera(rig, host.actor, t, dialogue, short, offset, musicHit, anticipation, musicWide);
     if (host.mixer) {
       const gestureTime = Math.max(0, t - (cues[line]?.at ?? t));
       const speakingGesture = voiceLevel * ease.out(clamp01((1.5 - gestureTime) / .35));
@@ -471,11 +457,12 @@ async function playMcIntro(unlocked) {
       const angle = Math.atan2(camera.position.x - host.actor.position.x, camera.position.z - host.actor.position.z) - host.actor.rotation.y;
       poseMc(host, dialogue, Math.min(t, MC_WALK_END), walking, voiceLevel, Math.atan2(Math.sin(angle), Math.cos(angle)),
         musicHit, musicMic, anticipation, Math.sin(t * 2.8));
+      grooveMc(host, (1 - walking) * (voiceLevel > .25 ? .35 : 1));
     }
     V.spotFocusAt.copy(host.actor.position);
     V.spotFocus = .43 * (1 - wide);
     V.spotPower = lerp(spotPower * .32, spotPower, wide);
-    V.roomWarmLight.intensity = warm * (lerp(.45, 1, wide) + .13 * musicWide * pulse);
+    V.roomWarmLight.intensity = warm * lerp(.45, 1, wide);
 
     if (withMusicCall && !dialogueDucked && t >= middleAt) {
       dialogueDucked = true;
