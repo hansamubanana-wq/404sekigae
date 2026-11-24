@@ -16,7 +16,7 @@ const MC_BGM_SETTLE = 3.4;
 const SFX_VOLUME = .85;     // 効果音全体の音量 (BGM とのバランス)
 const MC_RISE_SECONDS = 1.10;
 const MASTER_LOOKAHEAD = .006;  // DynamicsCompressorNode の固定先読み
-const BGM = { files: new Map(), main: null, request: null, playing: null };
+const BGM = { loading: new Map(), buffers: new Map(), main: null, request: null, playing: null };
 
 // iPad / iPhone のマナーモードでも鳴らす (Safari 16.4+)
 try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch {}
@@ -96,6 +96,7 @@ function playSfxBuffer(buf, o = {}) {
     node = node.connect(p);
   }
   node.connect(SND.master);
+  src.onended = () => { src.disconnect(); g.disconnect(); if (node !== g) node.disconnect(); };
   const t0 = o.at ?? ctx.currentTime + (o.delay || 0);
   src.start(t0);
   return {
@@ -186,33 +187,25 @@ function mcTransitionSfx(name, options) {
   return playSfxBuffer(SND.mcTransition[name], options);
 }
 
-// 再生する曲だけを PCM に展開する。
+// 起動時に一度だけ PCM に展開し、発表を繰り返しても同じバッファを使う。
 function loadBgm(name) {
-  if (!BGM.files.has(name)) {
+  if (BGM.buffers.has(name)) return Promise.resolve(BGM.buffers.get(name));
+  if (!BGM.loading.has(name)) {
     const file = fetch(BGM_FILES[name]).then(response => {
       if (!response.ok) throw new Error(`BGM: ${response.status}`);
       return response.arrayBuffer();
-    }).catch(error => {
-      BGM.files.delete(name);
-      throw error;
-    });
-    BGM.files.set(name, file);
+    }).then(data => SND.ctx.decodeAudioData(data)).then(buffer => {
+      BGM.buffers.set(name, buffer);
+      if (name === "main") BGM.main = buffer;
+      return buffer;
+    }).finally(() => BGM.loading.delete(name));
+    BGM.loading.set(name, file);
   }
-  return BGM.files.get(name);
+  return BGM.loading.get(name);
 }
 
-async function bgmPrepareMain() {
-  if (!SND.ctx || BGM.main) return;
-  try {
-    BGM.main = await SND.ctx.decodeAudioData((await loadBgm("main")).slice(0));
-  } catch {
-    BGM.files.delete("main");
-  }
-}
-
-function bgmPreload() {
-  if (!SND.music) return;
-  for (const name of ["tension", "finale"]) loadBgm(name).catch(() => {});
+function bgmPrepare() {
+  return SND.music && Promise.allSettled(Object.keys(BGM_FILES).map(loadBgm));
 }
 
 async function bgm(name, level = BGM_VOLUME[name], cue = null) {
@@ -232,7 +225,7 @@ async function bgm(name, level = BGM_VOLUME[name], cue = null) {
   }
   const ctx = SND.ctx;
   try {
-    const buffer = name === "main" && BGM.main ? BGM.main : await ctx.decodeAudioData((await loadBgm(name)).slice(0));
+    const buffer = BGM.buffers.get(name) || await loadBgm(name);
     if (BGM.request !== request) return;
 
     const src = ctx.createBufferSource();
@@ -258,7 +251,6 @@ async function bgm(name, level = BGM_VOLUME[name], cue = null) {
     BGM.playing = track;
   } catch {
     if (BGM.request === request) {
-      BGM.files.delete(name);
       BGM.request = null;
     }
   }

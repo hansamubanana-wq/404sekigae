@@ -515,35 +515,49 @@ function buildGust() {
 }
 
 /* ---------------- 紙吹雪 (フィナーレ) ---------------- */
-function confettiShower(ms = 5000, n = 360) {
-  const W = V.visW, H = V.visH;
+const CONFETTI_COUNT = 360;
+function buildConfetti(n) {
   const mesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(.13, .075), new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, toneMapped: false }), n);
-  const cols = [0xfbbf24, 0x2f8cff, 0xff4fb0, 0xa78bfa, 0x34d399, 0xffffff, 0xff7a45];
-  const P = [];
-  for (let i = 0; i < n; i++) {
-    const z = rand(-7, 2), sc = (STAGE_D - z) / STAGE_D;
-    P.push({
-      p: v3(rand(-W * .6, W * .6) * sc, rand(H * .55, H * 1.6) * sc, z),
-      v: rand(1.2, 2.4) * sc, sw: rand(.5, 1.5), ph: rand(0, 6.28), r: v3(rand(2, 8), rand(2, 8), rand(1, 4)),
-    });
-    mesh.setColorAt(i, new THREE.Color(pick(cols)).multiplyScalar(1.2));
-  }
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  mesh.setColorAt(0, new THREE.Color());
+  mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
   mesh.frustumCulled = false;
   mesh.renderOrder = 6;
-  V.stage.add(mesh);
+  mesh.userData.particles = Array.from({ length: n }, () => ({ p: v3(), v: 0, sw: 0, ph: 0, r: v3() }));
+  return mesh;
+}
+
+function confettiShower(ms = 5000, n = CONFETTI_COUNT) {
+  const W = V.visW, H = V.visH;
+  const mesh = stageActor(buildConfetti, n);
+  const count = V.reducedEffects ? Math.ceil(n * .85) : n;
+  mesh.count = count;
+  const cols = [0xfbbf24, 0x2f8cff, 0xff4fb0, 0xa78bfa, 0x34d399, 0xffffff, 0xff7a45];
+  const P = mesh.userData.particles;
+  const color = new THREE.Color();
+  for (let i = 0; i < count; i++) {
+    const z = rand(-7, 2), sc = (STAGE_D - z) / STAGE_D;
+    const q = P[i];
+    q.p.set(rand(-W * .6, W * .6) * sc, rand(H * .55, H * 1.6) * sc, z);
+    q.v = rand(1.2, 2.4) * sc;
+    q.sw = rand(.5, 1.5);
+    q.ph = rand(0, 6.28);
+    q.r.set(rand(2, 8), rand(2, 8), rand(1, 4));
+    mesh.setColorAt(i, color.setHex(pick(cols)).multiplyScalar(1.2));
+  }
+  mesh.instanceColor.needsUpdate = true;
   const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), E = new THREE.Euler(), S = v3(1, 1, 1);
-  let life = 0;
   const un = addFrameHook((dt, t) => {
-    life += dt;
-    P.forEach((q, i) => {
+    for (let i = 0; i < count; i++) {
+      const q = P[i];
       q.p.y -= q.v * dt;
       q.p.x += Math.sin(t * q.sw * 2 + q.ph) * dt * .6;
       E.set(t * q.r.x + q.ph, t * q.r.y, t * q.r.z);
       Q.setFromEuler(E);
       M.compose(q.p, Q, S);
       mesh.setMatrixAt(i, M);
-    });
+    }
     mesh.instanceMatrix.needsUpdate = true;
   });
-  return sleep(ms).then(() => { un(); V.stage.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose(); });
+  return sleep(ms).finally(() => { un(); mesh.userData.remove(); });
 }

@@ -27,6 +27,16 @@ const PITCH = 42;                     // カメラの見下ろし角
 const renderOptions = new URLSearchParams(location.search);
 const QUALITY = renderOptions.get("q") === "low" ? "low" : "high";
 const TARGET_FPS = renderOptions.get("fps") === "30" ? 30 : 60;
+const MAX_DRAW_PIXELS = 4200000;
+
+function displayPixelRatio(w, h) {
+  return Math.min(devicePixelRatio || 1, QUALITY === "low" ? 1 : 2, Math.sqrt(MAX_DRAW_PIXELS / (w * h)));
+}
+
+// 文字生成とGPU転送を分け、重い準備の間にも読み込み画面を描けるようにする。
+function nextLoadingFrame() {
+  return new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
+}
 
 const v3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -363,7 +373,7 @@ varying float vA; varying vec3 vC;
 void main(){ float r = length(gl_PointCoord - .5); float a = 1.0 - smoothstep(0.0, .5, r); gl_FragColor = vec4(vC * a * a * vA, 1.0); }`;
 
 /* ---------------- 初期化 ---------------- */
-async function initWorld() {
+async function initWorld(beforeNames) {
   THREE = await import("three");
   const [ec, rp, bp, op, rb, re] = await Promise.all([
     import("three/addons/postprocessing/EffectComposer.js"),
@@ -384,7 +394,7 @@ async function initWorld() {
   const canvas = document.getElementById("scene");
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: "high-performance" });
   V.renderer = renderer;
-  V.pixelRatio = Math.min(devicePixelRatio || 1, QUALITY === "low" ? 1 : 2);
+  V.pixelRatio = displayPixelRatio(innerWidth, innerHeight);
   renderer.setPixelRatio(V.pixelRatio);
   renderer.setSize(innerWidth, innerHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -398,7 +408,10 @@ async function initWorld() {
   V.camera = camera;
 
   const pmrem = new THREE.PMREMGenerator(renderer);
-  scene.environment = pmrem.fromScene(new re.RoomEnvironment(), .04).texture;
+  const room = new re.RoomEnvironment();
+  scene.environment = pmrem.fromScene(room, .04).texture;
+  room.dispose();
+  pmrem.dispose();
   scene.environmentIntensity = .5;
   scene.add(new THREE.AmbientLight(0x8090ff, .25));
   const dl = new THREE.DirectionalLight(0xffffff, 1.3);
@@ -415,18 +428,24 @@ async function initWorld() {
   composer.setPixelRatio(V.pixelRatio);
   composer.addPass(new rp.RenderPass(scene, camera));
   // UnrealBloomPass 自身も最初の段を半分にするので、明部抽出は実寸の 1/4。
-  class QuarterBloomPass extends bp.UnrealBloomPass {
-    setSize(w, h) { super.setSize(Math.max(2, w / 2), Math.max(2, h / 2)); }
+  class ReducedResolutionBloom extends bp.UnrealBloomPass {
+    setSize(w, h) { super.setSize(Math.max(2, w / this.divisor), Math.max(2, h / this.divisor)); }
   }
-  V.bloom = new QuarterBloomPass(new THREE.Vector2(1, 1), .7, .5, .92);
-  for (const target of [V.bloom.renderTargetBright, ...V.bloom.renderTargetsHorizontal, ...V.bloom.renderTargetsVertical]) {
-    target.depthBuffer = false;
-  }
-  composer.addPass(V.bloom);
+  const bloom = divisor => {
+    const pass = new ReducedResolutionBloom(new THREE.Vector2(4, 4), .7, .5, .92);
+    pass.divisor = divisor;
+    for (const target of [pass.renderTargetBright, ...pass.renderTargetsHorizontal, ...pass.renderTargetsVertical]) target.depthBuffer = false;
+    pass.blendMaterial.visible = false;
+    composer.addPass(pass);
+    return pass;
+  };
+  V.bloom = bloom(QUALITY === "low" ? 3 : 2);
+  V.lightBloom = QUALITY === "low" ? null : bloom(3);
+  if (V.lightBloom) V.lightBloom.enabled = false;
   // r180 のブルームを出力パスで加算し、HDR の全画面バッファへの書き戻しを省く。
   const output = new op.OutputPass();
   output.needsSwap = false;
-  V.bloom.blendMaterial.visible = false;
+  V.bloomOutput = output;
   output.uniforms.tBloom = { value: V.bloom.renderTargetsHorizontal[0].texture };
   output.material.fragmentShader = output.material.fragmentShader
     .replace("uniform sampler2D tDiffuse;", "uniform sampler2D tDiffuse;\nuniform sampler2D tBloom;")
@@ -444,7 +463,10 @@ async function initWorld() {
   const backC = makeCanvas(640, 342);
   drawBack(backC.getContext("2d"), 640, 342);
   V.tex.back = canvasTex(backC);
-  prepareNameAssets(renderer);
+  await beforeNames?.();
+  V.tex.curtain = canvasTex(curtainCanvas());
+  for (const tex of Object.values(V.tex)) renderer.initTexture(tex);
+  await prepareNameAssets(renderer);
 
   V.uniforms = { uTime: { value: 0 }, uDim: { value: 1 }, uTint: { value: new THREE.Color(1, 1, 1) } };
   V.wall = new THREE.WebGLRenderTarget(1024, 512, { type: THREE.HalfFloatType, depthBuffer: false });
@@ -467,7 +489,7 @@ async function initWorld() {
   worldReady = true;
 }
 
-function prepareNameAssets(renderer) {
+async function prepareNameAssets(renderer) {
   V.plateTex = {};
   V.cardFaces = {};
   V.cardLabels = new Map();
@@ -478,12 +500,13 @@ function prepareNameAssets(renderer) {
     renderer.initTexture(tex);
     return tex;
   };
-  for (const s of studentsOriginal) {
+  for (const [i, s] of studentsOriginal.entries()) {
     V.plateTex[s.no] = face(s, 640, 342, { badge: true });
     V.cardFaces[s.no] = [
       face(s, 640, 342),
       face(s, 1024, 548, { label: true, separateLabel: true }),
     ];
+    if ((i + 1) % 4 === 0) await nextLoadingFrame();
   }
   const labels = studentsOriginal.map((_, i) => `${i + 1}人目`).concat("ラスト！");
   for (const label of labels) {
@@ -497,15 +520,15 @@ function prepareNameAssets(renderer) {
     renderer.initTexture(tex);
     V.cardLabels.set(label, tex);
   }
-  V.nameMask = buildNameMask(renderer);
+  V.nameMask = await buildNameMask(renderer);
 }
 
-function buildNameMask(renderer) {
+async function buildNameMask(renderer) {
   const w = 640, h = 342, width = 2048, height = studentsOriginal.length * 2;
   const c = makeCanvas(w, h), ctx = c.getContext("2d", { willReadFrequently: true });
   const points = [], rows = {};
   const packed = new Float32Array(width * height * 2);
-  studentsOriginal.forEach((s, i) => {
+  for (const [i, s] of studentsOriginal.entries()) {
     rows[s.no] = i * 2;
     for (const mode of [0, 1]) {
       drawFace(ctx, w, h, s, { textOnly: true, label: mode });
@@ -523,7 +546,8 @@ function buildNameMask(renderer) {
         packed[to + 1] = points[point + 1];
       }
     }
-  });
+    if ((i + 1) % 6 === 0) await nextLoadingFrame();
+  }
   const texture = new THREE.DataTexture(packed, width, height, THREE.RGFormat, THREE.FloatType);
   texture.needsUpdate = true;
   renderer.initTexture(texture);
@@ -941,6 +965,7 @@ function buildSparks() {
 
 // at: ステージ座標。color: THREE.Color (明るさ 1 以上で光る)
 function burst(at, color, n = 120, speed = 3, o = {}) {
+  if (V.reducedEffects) n = Math.ceil(n * .82);
   V.sparks.active = true;
   const S = V.sparks, pos = S.geo.attributes.position.array, col = S.geo.attributes.aColor.array;
   S.pts.visible = true;
@@ -991,6 +1016,12 @@ function updateSparks(dt) {
 function layoutWorld() {
   const { renderer, camera, composer } = V;
   const w = innerWidth, h = innerHeight;
+  const ratio = displayPixelRatio(w, h);
+  if (ratio !== V.pixelRatio) {
+    V.pixelRatio = ratio;
+    renderer.setPixelRatio(ratio);
+    composer.setPixelRatio(ratio);
+  }
   renderer.setSize(w, h);
   composer.setSize(w, h);
   camera.aspect = w / h;
@@ -1091,15 +1122,43 @@ function tapPulse(key) {
 }
 
 /* ---------------- 毎フレーム ---------------- */
+function setReducedEffects(reduced) {
+  if (!V.lightBloom || V.reducedEffects === reduced) return;
+  V.reducedEffects = reduced;
+  V.bloom.enabled = !reduced;
+  V.lightBloom.enabled = reduced;
+  const active = reduced ? V.lightBloom : V.bloom;
+  V.bloomOutput.uniforms.tBloom.value = active.renderTargetsHorizontal[0].texture;
+  const { geo, N } = V.particles;
+  geo.setDrawRange(0, reduced ? N * .85 : N);
+}
+
+const renderPace = { duration: 0, frames: 0, late: 0, slow: 0, steady: 0 };
+function tuneEffects(gap, interval) {
+  if (!V.lightBloom || document.hidden || gap <= 0 || gap > 500) return;
+  renderPace.duration += gap;
+  renderPace.frames++;
+  if (gap > interval * 1.45) renderPace.late++;
+  if (renderPace.duration < 1400) return;
+  const lateRatio = renderPace.late / renderPace.frames;
+  renderPace.slow = lateRatio > .22 && busy ? renderPace.slow + 1 : 0;
+  renderPace.steady = lateRatio < .07 ? renderPace.steady + 1 : 0;
+  renderPace.duration = renderPace.frames = renderPace.late = 0;
+  if (renderPace.slow >= 2) setReducedEffects(true);
+  if (renderPace.steady >= 4) setReducedEffects(false);
+}
+
 function frame(now) {
   const interval = 1000 / TARGET_FPS;
   const next = V.nextFrameAt ?? now;
   if (now + 2 < next) return;
   V.nextFrameAt = now - next > interval / 2 ? now + interval : next + interval;
-  const dt = Math.min((now - (V.lastFrameAt ?? now)) / 1000, .05) * TIME_SCALE;
+  const elapsed = now - (V.lastFrameAt ?? now);
+  const dt = Math.min(elapsed / 1000, .05) * TIME_SCALE;
   V.lastFrameAt = now;
   for (const step of activeTweens) step(now);
   if (V.renderHold) return;   // 動画の再生中は3Dの描画を止める
+  tuneEffects(elapsed, interval);
   V.time = (V.time || 0) + dt;
   const t = V.time;
   V.uniforms.uTime.value = t;
