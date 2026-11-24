@@ -173,11 +173,11 @@ function buildMcModel(mergeGeometries) {
     pack(hip, [bulb(0,-.15,0,.128,.211,.142,ink)]);
     pack(knee, [bulb(0,-.136,0,.100,.197,.109,ink)]);
     pack(foot, [
-      bulb(0,-.036,.088,.116,.094,.205,0x151631),
-      bulb(0,-.065,.136,.109,.030,.157,0x323a5a),
+      bulb(0,-.032,.100,.116,.088,.176,0x151631),
+      [new V.RoundedBox(.205,.036,.36,2,.014).translate(0,-.112,.090), 0x323a5a],
       bulb(0,.013,.129,.089,.028,.121,0x243259),
     ]);
-    return { hip, knee, foot, side, ankle: v3(), footYaw: 0 };
+    return { hip, knee, foot, side, ankle: v3(), footYaw: 0, footPitch: 0 };
   });
   sphere.dispose();
   portrait.dispose();
@@ -190,7 +190,8 @@ function buildMcModel(mergeGeometries) {
 
   return { actor, body, head, eyes, mouth, smile, arms, mic, legs, armLength, forearmLength,
     shoulder: v3(), wrist: v3(), elbow: v3(), axis: v3(), bend: v3(), up: v3(0, 1, 0), down: v3(0, -1, 0),
-    inverseHip: new THREE.Quaternion(), footRotation: new THREE.Quaternion() };
+    heel: v3(0,-.130,-.076), heelOffset: v3(), right: v3(1,0,0),
+    inverseHip: new THREE.Quaternion(), footRotation: new THREE.Quaternion(), footPitch: new THREE.Quaternion() };
 }
 
 function placeMcArm(host, arm, x, y, z) {
@@ -222,22 +223,31 @@ function aimMcMic(host) {
 function poseMcFeet(host, t) {
   const { actor, legs, up, down, axis, bend, elbow, inverseHip, footRotation } = host;
   const upper = .326, lower = .335, legLength = upper + lower;
-  let hipHeight = lerp(.675, .791, ease.inOut(clamp01((t - MC_LAST_STEP) / (MC_WALK_END - MC_LAST_STEP))));
+  const phaseInStep = (t % MC_STEP_INTERVAL) / MC_STEP_INTERVAL;
+  const stand = ease.inOut(clamp01((t - MC_LAST_STEP) / (MC_WALK_END - MC_LAST_STEP)));
+  let hipHeight = lerp(.724 + .025 * Math.sin(Math.PI * phaseInStep) ** 2, .791, stand);
   actor.updateMatrixWorld();
   for (const leg of legs) {
     const next = leg.marks.findIndex(mark => t < mark.at);
     const landed = leg.marks[next < 0 ? leg.marks.length - 1 : Math.max(0, next - 1)];
     const upcoming = next > 0 ? leg.marks[next] : landed;
-    const phase = clamp01((t - upcoming.at + .50) / .50);
+    const phase = next > 0 ? clamp01((t - upcoming.at + .47) / .47) : 0;
     const travel = ease.inOut(phase);
     leg.ankle.lerpVectors(landed.position, upcoming.position, travel);
-    leg.ankle.y += .14 * Math.sin(Math.PI * phase) * (upcoming === landed ? 0 : 1);
+    leg.ankle.y += .115 * Math.sin(Math.PI * phase) ** 1.3;
+    const yaw = lerp(landed.yaw, upcoming.yaw, travel);
+    const heelStrike = .29;
+    leg.footPitch = phase > 0 ? -heelStrike * ease.inOut(clamp01((phase - .46) / .54)) :
+      -heelStrike * (1 - ease.inOut(clamp01((t - landed.at) / MC_SOLE_AT))) * (landed.at > 0 ? 1 : 0);
+    // 接地したかかとを床の同じ点に置いたまま、靴底を下ろす。
+    host.heelOffset.copy(host.heel).applyAxisAngle(host.right, leg.footPitch).negate().add(host.heel).applyAxisAngle(up, yaw);
+    leg.ankle.add(host.heelOffset);
     actor.worldToLocal(leg.ankle);
-    leg.footYaw = lerp(landed.yaw, upcoming.yaw, travel) - actor.rotation.y;
+    leg.footYaw = yaw - actor.rotation.y;
     const span = Math.hypot(leg.ankle.x - leg.hip.position.x, leg.ankle.z);
     hipHeight = Math.min(hipHeight, leg.ankle.y + Math.sqrt(Math.max(0, (legLength - .001) ** 2 - span ** 2)));
   }
-  for (const { hip, knee, foot, ankle, footYaw } of legs) {
+  for (const { hip, knee, foot, ankle, footYaw, footPitch } of legs) {
     hip.position.y = hipHeight;
     axis.subVectors(ankle, hip.position);
     const length = Math.min(legLength - .0001, axis.length());
@@ -248,7 +258,7 @@ function poseMcFeet(host, t) {
     hip.quaternion.setFromUnitVectors(down, axis.subVectors(elbow, hip.position).normalize());
     inverseHip.copy(hip.quaternion).invert();
     knee.quaternion.setFromUnitVectors(down, axis.subVectors(ankle, elbow).normalize().applyQuaternion(inverseHip));
-    footRotation.setFromAxisAngle(up, footYaw);
+    footRotation.setFromAxisAngle(up, footYaw).multiply(host.footPitch.setFromAxisAngle(host.right, footPitch));
     foot.quaternion.copy(knee.quaternion).invert().multiply(inverseHip).multiply(footRotation);
   }
   return hipHeight - .791;
@@ -257,9 +267,11 @@ function poseMcFeet(host, t) {
 function poseMc(host, t, walkTime, walking, voice, cameraAngle = 0, musicHit = 0, musicMic = 0, anticipation = 0, scan = 0) {
   const phase = walkTime * Math.PI / MC_STEP_INTERVAL;
   const sway = walking * Math.sin(phase);
+  const armSwing = walking * Math.cos(phase);
   const stance = host.legs[0].marks ? poseMcFeet(host, walkTime) : 0;
-  host.body.position.y = stance + .017 * walking * Math.abs(Math.sin(phase)) + .008 * Math.sin(t * 4) + .025 * anticipation;
+  host.body.position.y = stance + .008 * (1 - walking) * Math.sin(t * 4) + .025 * anticipation;
   host.body.rotation.z = sway * .045;
+  host.body.rotation.y = armSwing * .045;
 
   const welcome = ease.inOut(clamp01((t - MC_LINES[0].at) / .34)) * (1 - ease.inOut(clamp01((t - 2.69) / .48)));
   const fist = Math.max(musicHit, ease.out(clamp01((t - (MC_FANFARE_AT - .29)) / .28)) *
@@ -268,9 +280,9 @@ function poseMc(host, t, walkTime, walking, voice, cameraAngle = 0, musicHit = 0
     (1 - ease.inOut(clamp01((t - (MC_SUBTITLE_OUT - .28)) / .74)));
   const speaking = Math.max(musicMic, ease.out(clamp01(t / .22)) * (1 - ease.inOut(clamp01((t - MC_SUBTITLE_OUT) / .52))));
   const side = Math.max(welcome, reveal, fist);
-  placeMcArm(host, host.arms[0], lerp(-.339,-.155,speaking), lerp(.84,1.443,speaking) - .10 * anticipation, lerp(.03 + sway * .16,.36,speaking));
+  placeMcArm(host, host.arms[0], lerp(-.339,-.155,speaking), lerp(.84 + .045 * armSwing,1.443,speaking) - .10 * anticipation, lerp(.03 + armSwing * .18,.36,speaking));
   placeMcArm(host, host.arms[1], lerp(.351,.665,side) - .12 * fist, .84 + .375 * welcome + .815 * fist + .388 * reveal,
-    .02 - sway * .16 + .11 * welcome + .08 * fist + .28 * reveal);
+    .02 - armSwing * .18 + .11 * welcome + .08 * fist + .28 * reveal);
   const free = host.arms[1];
   free.open.visible = Math.max(welcome, reveal) > .35 && fist < .40;
   free.fist.visible = !free.open.visible;
@@ -296,6 +308,7 @@ function poseMcWaiting(host, t, voice, gesture, strong) {
   const sway = Math.sin(t * 1.65);
   host.body.position.y = .012 + .012 * sway;
   host.body.rotation.z = .028 * sway - .035 * gesture;
+  host.body.rotation.y = 0;
   for (const { hip, knee, foot } of host.legs) {
     hip.position.y = .791;
     hip.quaternion.identity();
