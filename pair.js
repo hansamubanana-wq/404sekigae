@@ -92,7 +92,7 @@ function popIn(g, k, ms = 450) {
 }
 function revealBurst(g, s) {
   boostGroove(850, .32);
-  V.grooveReadUntil = performance.now() + 1600;
+  protectGrooveNames(1600);
   burst(g.position.clone().add(v3(0, 0, .3)), [hdr(HEX[s.gender], 3), hdr(HEX.gold, 3), hdr(0xffffff, 2.5)], 120, 4);
 }
 

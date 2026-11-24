@@ -263,13 +263,6 @@ function bgmLevelAt(track, at) {
     : track.from + (track.to - track.from) * t;
 }
 
-function bgmBeatTrack(at) {
-  const current = bgmLevelAt(BGM.playing, at);
-  const outgoing = bgmLevelAt(BGM.outgoing, at);
-  if (Math.max(current, outgoing) < .009) return null;
-  return outgoing > current ? BGM.outgoing : BGM.playing;
-}
-
 function rampBgm(track, target, duration) {
   const now = SND.ctx.currentTime;
   const level = bgmLevelAt(track, now);
