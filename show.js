@@ -18,9 +18,15 @@ const BUBBLE_SFX = {
   "…チャンネル調整中": "zap", "どこだ…？": "suspense", "発射！": "thruster", "…なにか来る！": "suspense",
   "ボヨン": "boing", "ぽよん": "boing", "ボイン": "boing",
 };
+const BUBBLE_SOUND_ONLY = new Set([
+  "ドーン！", "ジャーン！", "パカッ！", "ピキッ", "ピキピキッ",
+  "ザザッ…", "…チャンネル調整中", "発射！", "ボヨン", "ぽよん", "ボイン",
+  "シュン！", "…ヒュ～", "ビュオォォ！", "ジリリリリ！", "ドロン",
+]);
 
 function bubble(text, local, ms = 1100) {
   if (BUBBLE_SFX[text]) sfx(BUBBLE_SFX[text], { pan: panOf(local), vary: .06 });
+  if (BUBBLE_SOUND_ONLY.has(text)) return;
   const p = toScreen(local);
   const el = document.createElement("div");
   el.className = "bubble";
