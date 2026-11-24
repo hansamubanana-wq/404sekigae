@@ -11,7 +11,7 @@ const MC_SUBTITLE_OUT = 13.28;
 const MC_RISE_AT = 12.68;
 const MC_END = 13.34;
 const MC_WALK_END = 4.14;
-const USE_KENNEY_MC = true;
+const USE_KENNEY_MC = false;
 const MC_STEP_INTERVAL = .65;
 const MC_SOLE_AT = .052;
 const MC_STEP_COUNT = 6;
@@ -155,7 +155,11 @@ async function loadMcActor() {
 }
 
 function mcWalkPace(t) {
-  return clamp01((t - .15) / (MC_LAST_STEP - .37));
+  const progress = clamp01((t - .06) / (MC_LAST_STEP - .18));
+  const ramp = .12;
+  if (progress < ramp) return progress ** 2 / (2 * ramp * (1 - ramp));
+  if (progress > 1 - ramp) return 1 - (1 - progress) ** 2 / (2 * ramp * (1 - ramp));
+  return (progress - ramp / 2) / (1 - ramp);
 }
 
 function mcFootMark(host, side, at, pace) {

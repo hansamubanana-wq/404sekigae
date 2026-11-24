@@ -220,21 +220,42 @@ function aimMcMic(host) {
   host.mic.quaternion.setFromUnitVectors(host.up, host.axis);
 }
 
-function poseMcFeet(host, t) {
+// Quaternius Walk supplies the swing from .025 to .725 s and the stride starting at .100 s.
+// The hand samples are shoulder-relative; positions are scaled to this puppet's limbs.
+const MC_WALK_TRAVEL = [0, .023, .09, .20, .38, .65, .90, .99, 1];
+const MC_WALK_CLEARANCE = [0, .034, .088, .112, .104, .081, .050, .024, 0];
+const MC_WALK_HIPS = [.851, .917, .996, .974, .926, .879, .853, .867, .985, .975, .905, .866, .851];
+const MC_WALK_LEFT_HAND_Y = [-.608, -.695, -.747, -.731, -.649, -.568, -.540, -.634, -.736, -.716, -.624, -.580, -.608];
+const MC_WALK_LEFT_HAND_Z = [.464, .249, -.031, -.276, -.501, -.629, -.669, -.518, -.187, .194, .437, .511, .464];
+const MC_WALK_RIGHT_HAND_Y = [-.672, -.761, -.755, -.706, -.633, -.584, -.593, -.660, -.735, -.734, -.678, -.633, -.672];
+const MC_WALK_RIGHT_HAND_Z = [-.488, -.190, .070, .277, .441, .507, .491, .363, .094, -.218, -.432, -.547, -.488];
+
+function mcWalkCurve(samples, phase, loop = false) {
+  const last = samples.length - 1;
+  const sample = phase * last;
+  const index = Math.min(last - 1, Math.floor(sample));
+  const t = sample - index;
+  const a = samples[index], b = samples[index + 1];
+  const before = samples[index > 0 ? index - 1 : loop ? last - 1 : 0];
+  const after = samples[index + 2 <= last ? index + 2 : loop ? 1 : last];
+  return lerp(a, b, t * t * (3 - 2 * t)) + .5 * t * (1 - t) * ((1 - t) * (b - before) - t * (after - a));
+}
+
+function poseMcFeet(host, t, stride) {
   const { actor, legs, up, down, axis, bend, elbow, inverseHip, footRotation } = host;
   const upper = .326, lower = .335, legLength = upper + lower;
-  const phaseInStep = (t % MC_STEP_INTERVAL) / MC_STEP_INTERVAL;
   const stand = ease.inOut(clamp01((t - MC_LAST_STEP) / (MC_WALK_END - MC_LAST_STEP)));
-  let hipHeight = lerp(.724 + .025 * Math.sin(Math.PI * phaseInStep) ** 2, .791, stand);
+  let hipHeight = lerp(.726 + (mcWalkCurve(MC_WALK_HIPS, stride, true) - .85) * .29, .791, stand);
   actor.updateMatrixWorld();
   for (const leg of legs) {
     const next = leg.marks.findIndex(mark => t < mark.at);
     const landed = leg.marks[next < 0 ? leg.marks.length - 1 : Math.max(0, next - 1)];
     const upcoming = next > 0 ? leg.marks[next] : landed;
-    const phase = next > 0 ? clamp01((t - upcoming.at + .47) / .47) : 0;
-    const travel = ease.inOut(phase);
+    const swing = landed.at === 0 ? .46 : .59;
+    const phase = next > 0 ? clamp01((t - upcoming.at + swing) / swing) : 0;
+    const travel = clamp01(mcWalkCurve(MC_WALK_TRAVEL, phase));
     leg.ankle.lerpVectors(landed.position, upcoming.position, travel);
-    leg.ankle.y += .115 * Math.sin(Math.PI * phase) ** 1.3;
+    leg.ankle.y += Math.max(0, mcWalkCurve(MC_WALK_CLEARANCE, phase));
     const yaw = lerp(landed.yaw, upcoming.yaw, travel);
     const heelStrike = .29;
     leg.footPitch = phase > 0 ? -heelStrike * ease.inOut(clamp01((phase - .46) / .54)) :
@@ -266,12 +287,16 @@ function poseMcFeet(host, t) {
 
 function poseMc(host, t, walkTime, walking, voice, cameraAngle = 0, musicHit = 0, musicMic = 0, anticipation = 0, scan = 0) {
   const phase = walkTime * Math.PI / MC_STEP_INTERVAL;
+  const stride = walkTime % (2 * MC_STEP_INTERVAL) / (2 * MC_STEP_INTERVAL);
   const sway = walking * Math.sin(phase);
-  const armSwing = walking * Math.cos(phase);
-  const stance = host.legs[0].marks ? poseMcFeet(host, walkTime) : 0;
+  const lz = walking * mcWalkCurve(MC_WALK_LEFT_HAND_Z, stride, true);
+  const rz = walking * mcWalkCurve(MC_WALK_RIGHT_HAND_Z, stride, true);
+  const ly = walking * (mcWalkCurve(MC_WALK_LEFT_HAND_Y, stride, true) + .68);
+  const ry = walking * (mcWalkCurve(MC_WALK_RIGHT_HAND_Y, stride, true) + .68);
+  const stance = host.legs[0].marks ? poseMcFeet(host, walkTime, stride) : 0;
   host.body.position.y = stance + .008 * (1 - walking) * Math.sin(t * 4) + .025 * anticipation;
   host.body.rotation.z = sway * .045;
-  host.body.rotation.y = armSwing * .045;
+  host.body.rotation.y = (lz - rz) * .043;
 
   const welcome = ease.inOut(clamp01((t - MC_LINES[0].at) / .34)) * (1 - ease.inOut(clamp01((t - 2.69) / .48)));
   const fist = Math.max(musicHit, ease.out(clamp01((t - (MC_FANFARE_AT - .29)) / .28)) *
@@ -280,9 +305,9 @@ function poseMc(host, t, walkTime, walking, voice, cameraAngle = 0, musicHit = 0
     (1 - ease.inOut(clamp01((t - (MC_SUBTITLE_OUT - .28)) / .74)));
   const speaking = Math.max(musicMic, ease.out(clamp01(t / .22)) * (1 - ease.inOut(clamp01((t - MC_SUBTITLE_OUT) / .52))));
   const side = Math.max(welcome, reveal, fist);
-  placeMcArm(host, host.arms[0], lerp(-.339,-.155,speaking), lerp(.84 + .045 * armSwing,1.443,speaking) - .10 * anticipation, lerp(.03 + armSwing * .18,.36,speaking));
-  placeMcArm(host, host.arms[1], lerp(.351,.665,side) - .12 * fist, .84 + .375 * welcome + .815 * fist + .388 * reveal,
-    .02 - armSwing * .18 + .11 * welcome + .08 * fist + .28 * reveal);
+  placeMcArm(host, host.arms[0], lerp(-.339,-.155,speaking), lerp(.84 + ly * .32,1.443,speaking) - .10 * anticipation, lerp(.03 + lz * .28,.36,speaking));
+  placeMcArm(host, host.arms[1], lerp(.351,.665,side) - .12 * fist, .84 + ry * .32 + .375 * welcome + .815 * fist + .388 * reveal,
+    .02 + rz * .28 + .11 * welcome + .08 * fist + .28 * reveal);
   const free = host.arms[1];
   free.open.visible = Math.max(welcome, reveal) > .35 && fist < .40;
   free.fist.visible = !free.open.visible;
