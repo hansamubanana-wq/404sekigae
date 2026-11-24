@@ -11,7 +11,10 @@ const MC_SUBTITLE_OUT = 13.28;
 const MC_RISE_AT = 12.68;
 const MC_END = 13.34;
 const MC_WALK_END = 4.14;
-const MC_MUSIC_CALL_AT = 4.36;
+const MC_GREETING_AT = 4.36;
+const MC_GREETING_CUT = 3.16;  // 1文目と2文目の間の無音
+const MC_DIALOGUE_RESUME = 3.49;
+const MC_MUSIC_CALL_AT = MC_GREETING_AT + 3.40;
 const MC_MUSIC_START_AT = MC_MUSIC_CALL_AT + 1.32;  // 「START」の頭
 const MC_MUSIC_CAPTION = "音楽、スタート！";
 const MC_SEEN_KEY = "404-mc-intro-seen";
@@ -264,13 +267,19 @@ async function playMcIntro(unlocked) {
   const offset = short ? MC_SHORT_AT : 0;
   const withMusicCall = !short && !!host.musicCall;
   const callEnd = withMusicCall ? MC_MUSIC_CALL_AT + host.musicCall.duration : MC_WALK_END;
-  const dialogueAt = short ? 0 : callEnd + .23;
+  const voiceOffset = withMusicCall ? MC_DIALOGUE_RESUME : offset;
+  const voiceAt = short ? 0 : callEnd + .23;
+  const dialogueAt = voiceAt - (withMusicCall ? voiceOffset : 0);
   const end = dialogueAt + MC_END;
-  const cues = MC_LINES.filter(line => line.at > offset).map(line => ({ ...line, at: line.at + dialogueAt }));
-  if (withMusicCall) cues.unshift({ at: MC_MUSIC_CALL_AT, text: MC_MUSIC_CAPTION });
+  const cues = MC_LINES.filter(line => line.at > voiceOffset).map(line => ({ ...line, at: line.at + dialogueAt }));
+  if (withMusicCall) cues.unshift(
+    { ...MC_LINES[0], at: MC_GREETING_AT + MC_LINES[0].at },
+    { at: MC_MUSIC_CALL_AT, text: MC_MUSIC_CAPTION },
+  );
   const start = ctx.currentTime + .035;
   const voice = ctx.createBufferSource();
   const call = withMusicCall ? ctx.createBufferSource() : null;
+  const greeting = withMusicCall ? ctx.createBufferSource() : null;
   const gain = ctx.createGain();
   const meter = ctx.createAnalyser();
   meter.fftSize = 256;
@@ -279,6 +288,9 @@ async function playMcIntro(unlocked) {
   voice.connect(meter).connect(gain).connect(SND.master);
   voice.onended = () => { voice.disconnect(); meter.disconnect(); gain.disconnect(); };
   if (call) {
+    greeting.buffer = host.voice;
+    greeting.connect(meter);
+    greeting.onended = () => greeting.disconnect();
     call.buffer = host.musicCall;
     call.connect(meter);
     call.onended = () => call.disconnect();
@@ -302,7 +314,9 @@ async function playMcIntro(unlocked) {
   let completed = false;
 
   function update(t) {
-    const dialogue = t - dialogueAt;
+    const dialogue = withMusicCall && t < voiceAt
+      ? Math.min(t - MC_GREETING_AT, MC_GREETING_CUT)
+      : t - dialogueAt;
     const pace = clamp01((t - .09) / (MC_WALK_END - .09));
     host.path.getPointAt(pace, host.actor.position);
     host.path.getTangentAt(pace, heading);
@@ -331,7 +345,7 @@ async function playMcIntro(unlocked) {
       footSound = mcTransitionSfx("foot", { vol: .89, pan: -.48 + pace * .48, vary: .13 });
       step = footfall;
     }
-    if (withMusicCall && !dialogueDucked && dialogue >= 0) {
+    if (withMusicCall && !dialogueDucked && t >= voiceAt) {
       dialogueDucked = true;
       bgmDuck(true, .59);
     }
@@ -361,12 +375,13 @@ async function playMcIntro(unlocked) {
     ctx.addEventListener("statechange", onAudioState);
     bgmDuck(true, withMusicCall ? .82 : .35);
     if (withMusicCall) {
+      greeting.start(start + MC_GREETING_AT, 0, MC_GREETING_CUT);
       call.start(start + MC_MUSIC_CALL_AT);
       cueMcBgm(start + MC_MUSIC_START_AT);
     } else {
       bgm("main");
     }
-    voice.start(start + dialogueAt, offset);
+    voice.start(start + voiceAt, voiceOffset);
     rise = mcTransitionSfx("rise", { vol: .29, delay: Math.max(0, start + dialogueAt + MC_RISE_AT - offset - ctx.currentTime) });
     mcSeen = true;
     try { sessionStorage.setItem(MC_SEEN_KEY, "1"); } catch {}
@@ -388,6 +403,7 @@ async function playMcIntro(unlocked) {
     const now = ctx.currentTime;
     gain.gain.setTargetAtTime(0, now, .025);
     try { voice.stop(now + .10); } catch {}
+    try { greeting?.stop(now + .10); } catch {}
     try { call?.stop(now + .10); } catch {}
     if (!completed) {
       cancelMcBgmCue();
