@@ -107,11 +107,16 @@ async function loadMcHost() {
     host.reactionMeter.fftSize = 256;
     host.reactionWave = new Float32Array(host.reactionMeter.fftSize);
   }
-  // 教卓の幅は3.4。左端の外を通って黒板側へ回り、最後は生徒側を向く。
-  host.path = new THREE.CatmullRomCurve3([
+  // 手作り人形の短い脚に合わせ、教卓の左奥から短い歩幅で回り込む。
+  host.path = new THREE.CatmullRomCurve3(host.mixer ? [
     v3(-2.84, 0, PODIUM_Z - .39),
     v3(-2.31, 0, PODIUM_Z - .90),
     v3(-1.80, 0, PODIUM_Z - 1.17),
+    v3(-.14, 0, PODIUM_Z - 1.20),
+  ] : [
+    v3(-1.95, 0, PODIUM_Z - 1.01),
+    v3(-1.67, 0, PODIUM_Z - 1.15),
+    v3(-1.18, 0, PODIUM_Z - 1.20),
     v3(-.14, 0, PODIUM_Z - 1.20),
   ]);
   if (host.mixer) {
@@ -120,12 +125,11 @@ async function loadMcHost() {
     poseMcSuit(host, MC_WALK_END, 0);
   } else {
     host.armRotation = new THREE.Quaternion();
-    const length = host.path.getLength();
     for (const [index, leg] of host.legs.entries()) {
       leg.marks = [mcFootMark(host, leg.side, 0, 0)];
       for (let step = index + 1; step <= MC_STEP_COUNT; step += 2) {
         const at = step * MC_STEP_INTERVAL;
-        const pace = step >= MC_STEP_COUNT - 1 ? 1 : clamp01(mcWalkPace(at) + .16 / length);
+        const pace = step >= MC_STEP_COUNT - 1 ? 1 : mcWalkPace(at + .34);
         leg.marks.push(mcFootMark(host, leg.side, at, pace));
       }
     }

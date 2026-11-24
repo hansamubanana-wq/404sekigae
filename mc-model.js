@@ -222,8 +222,8 @@ function aimMcMic(host) {
 
 // Quaternius Walk supplies the swing from .025 to .725 s and the stride starting at .100 s.
 // The hand samples are shoulder-relative; positions are scaled to this puppet's limbs.
-const MC_WALK_TRAVEL = [0, .023, .09, .20, .38, .65, .90, .99, 1];
-const MC_WALK_CLEARANCE = [0, .034, .088, .112, .104, .081, .050, .024, 0];
+const MC_WALK_TRAVEL = [0, .045, .17, .33, .51, .69, .84, .95, 1];
+const MC_WALK_CLEARANCE = [0, .009, .021, .029, .026, .02, .016, .010, 0];
 const MC_WALK_HIPS = [.851, .917, .996, .974, .926, .879, .853, .867, .985, .975, .905, .866, .851];
 const MC_WALK_LEFT_HAND_Y = [-.608, -.695, -.747, -.731, -.649, -.568, -.540, -.634, -.736, -.716, -.624, -.580, -.608];
 const MC_WALK_LEFT_HAND_Z = [.464, .249, -.031, -.276, -.501, -.629, -.669, -.518, -.187, .194, .437, .511, .464];
@@ -245,19 +245,19 @@ function poseMcFeet(host, t, stride) {
   const { actor, legs, up, down, axis, bend, elbow, inverseHip, footRotation } = host;
   const upper = .326, lower = .335, legLength = upper + lower;
   const stand = ease.inOut(clamp01((t - MC_LAST_STEP) / (MC_WALK_END - MC_LAST_STEP)));
-  let hipHeight = lerp(.726 + (mcWalkCurve(MC_WALK_HIPS, stride, true) - .85) * .29, .791, stand);
+  let hipHeight = lerp(.786 + (mcWalkCurve(MC_WALK_HIPS, stride, true) - .85) * .032, .791, stand);
   actor.updateMatrixWorld();
   for (const leg of legs) {
     const next = leg.marks.findIndex(mark => t < mark.at);
     const landed = leg.marks[next < 0 ? leg.marks.length - 1 : Math.max(0, next - 1)];
     const upcoming = next > 0 ? leg.marks[next] : landed;
-    const swing = landed.at === 0 ? .46 : .59;
+    const swing = upcoming.at === MC_STEP_INTERVAL ? .46 : .64;
     const phase = next > 0 ? clamp01((t - upcoming.at + swing) / swing) : 0;
     const travel = clamp01(mcWalkCurve(MC_WALK_TRAVEL, phase));
     leg.ankle.lerpVectors(landed.position, upcoming.position, travel);
     leg.ankle.y += Math.max(0, mcWalkCurve(MC_WALK_CLEARANCE, phase));
     const yaw = lerp(landed.yaw, upcoming.yaw, travel);
-    const heelStrike = .29;
+    const heelStrike = .25;
     leg.footPitch = phase > 0 ? -heelStrike * ease.inOut(clamp01((phase - .46) / .54)) :
       -heelStrike * (1 - ease.inOut(clamp01((t - landed.at) / MC_SOLE_AT))) * (landed.at > 0 ? 1 : 0);
     // 接地したかかとを床の同じ点に置いたまま、靴底を下ろす。
@@ -295,8 +295,8 @@ function poseMc(host, t, walkTime, walking, voice, cameraAngle = 0, musicHit = 0
   const ry = walking * (mcWalkCurve(MC_WALK_RIGHT_HAND_Y, stride, true) + .68);
   const stance = host.legs[0].marks ? poseMcFeet(host, walkTime, stride) : 0;
   host.body.position.y = stance + .008 * (1 - walking) * Math.sin(t * 4) + .025 * anticipation;
-  host.body.rotation.z = sway * .045;
-  host.body.rotation.y = (lz - rz) * .043;
+  host.body.rotation.z = sway * .015;
+  host.body.rotation.y = (lz - rz) * .020;
 
   const welcome = ease.inOut(clamp01((t - MC_LINES[0].at) / .34)) * (1 - ease.inOut(clamp01((t - 2.69) / .48)));
   const fist = Math.max(musicHit, ease.out(clamp01((t - (MC_FANFARE_AT - .29)) / .28)) *
@@ -305,9 +305,10 @@ function poseMc(host, t, walkTime, walking, voice, cameraAngle = 0, musicHit = 0
     (1 - ease.inOut(clamp01((t - (MC_SUBTITLE_OUT - .28)) / .74)));
   const speaking = Math.max(musicMic, ease.out(clamp01(t / .22)) * (1 - ease.inOut(clamp01((t - MC_SUBTITLE_OUT) / .52))));
   const side = Math.max(welcome, reveal, fist);
-  placeMcArm(host, host.arms[0], lerp(-.339,-.155,speaking), lerp(.84 + ly * .32,1.443,speaking) - .10 * anticipation, lerp(.03 + lz * .28,.36,speaking));
-  placeMcArm(host, host.arms[1], lerp(.351,.665,side) - .12 * fist, .84 + ry * .32 + .375 * welcome + .815 * fist + .388 * reveal,
-    .02 + rz * .28 + .11 * welcome + .08 * fist + .28 * reveal);
+  const wristY = .84 - .018 * walking;
+  placeMcArm(host, host.arms[0], lerp(-.339,-.155,speaking), lerp(wristY + ly * .17,1.443,speaking) - .10 * anticipation, lerp(.03 + lz * .13,.36,speaking));
+  placeMcArm(host, host.arms[1], lerp(.351,.665,side) - .12 * fist, wristY + ry * .17 + .375 * welcome + .815 * fist + .388 * reveal,
+    .02 + rz * .13 + .11 * welcome + .08 * fist + .28 * reveal);
   const free = host.arms[1];
   free.open.visible = Math.max(welcome, reveal) > .35 && fist < .40;
   free.fist.visible = !free.open.visible;
