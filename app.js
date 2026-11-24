@@ -25,6 +25,13 @@ function createSeatPositionsColumnFirst() {
 }
 
 const realSeatPositions = createSeatPositionsColumnFirst();
+const seatIndices = new Map(realSeatPositions.map((key, index) => [key, index]));
+const seatNeighbors = realSeatPositions.map(key => {
+  const [row, col] = key.split("-").map(Number);
+  return [`${row - 1}-${col}`, `${row + 1}-${col}`, `${row}-${col - 1}`, `${row}-${col + 1}`]
+    .filter(neighbor => seatIndices.has(neighbor))
+    .map(neighbor => seatIndices.get(neighbor));
+});
 
 if (realSeatPositions.length !== studentsOriginal.length) {
   console.warn(`席の数(${realSeatPositions.length})と生徒の数(${studentsOriginal.length})が合っていません`);
@@ -85,6 +92,47 @@ function shuffleArray(array) {
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
+}
+
+const SEAT_SHUFFLE_LIMIT = 4096;
+
+function shuffleSeatStudents(layout, movable) {
+  const indices = movable.map(key => seatIndices.get(key));
+  const candidate = realSeatPositions.map(key => layout[key]);
+  const { random, floor } = Math;
+  const allSameGender = indices.every(index => candidate[index].gender === candidate[indices[0]].gender);
+  // 全員が同性なら入れ替えても違反数が変わらない。
+  const limit = allSameGender ? 1 : SEAT_SHUFFLE_LIMIT;
+  let best, bestViolations = Infinity;
+  for (let attempt = 0; attempt < limit; attempt++) {
+    // 動かせる席だけを等確率で混ぜ、教室全体の上下左右を調べる。
+    for (let i = indices.length - 1; i > 0; i--) {
+      const a = indices[i], b = indices[floor(random() * (i + 1))];
+      const student = candidate[a];
+      candidate[a] = candidate[b];
+      candidate[b] = student;
+    }
+    let violations = 0;
+    for (let i = 0; i < candidate.length; i++) {
+      const neighbors = seatNeighbors[i];
+      if (!neighbors.length) continue;
+      const gender = candidate[i].gender;
+      let hasSame = false;
+      for (const neighbor of neighbors) {
+        if (candidate[neighbor].gender !== gender) continue;
+        hasSame = true;
+        break;
+      }
+      if (!hasSame && ++violations >= bestViolations) break;
+    }
+    if (!violations) return indices.map(index => candidate[index]);
+    if (violations < bestViolations) {
+      bestViolations = violations;
+      best = indices.map(index => candidate[index]);
+    }
+  }
+  console.warn(`同性の隣席条件を満たす配置が見つかりませんでした（${limit}回、対象${bestViolations}人）。試した中で対象が最少の配置を採用します。`);
+  return best;
 }
 
 /* ---------- 保存 / 読み込み ---------- */
@@ -344,7 +392,7 @@ async function shuffleSeats(scope = null) {
   if (movable.length < (scope ? 2 : 1)) return;
   setSeatMode(null);
 
-  const shuffled = shuffleArray(movable.map(pos => seats[pos]));
+  const shuffled = shuffleSeatStudents(seats, movable);
   movable.forEach((pos, i) => { seats[pos] = shuffled[i]; });
 
   const operation = scope ? "選んだ席でやり直し" : "席替え";
