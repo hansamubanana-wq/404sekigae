@@ -33,6 +33,7 @@ function stageActor(build, variant) {
 }
 
 /* ---------------- 猫 ---------------- */
+const ENABLE_CAT = false;
 const CAT_COATS = [0xcf8749, 0x8d99a8, 0x3c3942, 0xe6d4b9];
 
 // 鼻先は +x。胴の模様は頂点色にし、毛並みを描くための追加メッシュを使わない。
