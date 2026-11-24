@@ -1,8 +1,8 @@
 // オフラインでも開けるようにするキャッシュ
 // ・このサイトのファイル: ネットを優先 (更新がすぐ反映される)。つながらないときはキャッシュ
 // ・three.js やフォントなど外部のファイル: キャッシュを優先
-const CACHE = "sekigae-v13";
-// BGM は最初の操作以降に取得するため、事前キャッシュには含めない。
+const CACHE = "sekigae-v14";
+// 音声はアプリが必要なタイミングで読み込むので、事前キャッシュには含めない。
 const CORE = [
   "./", "index.html", "style.css", "students.js", "sound.js", "app.js", "world.js", "models.js", "mc-model.js", "mc.js", "extras.js", "frontrow.js", "pair.js", "show.js",
   "sounds/_list.json", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png",

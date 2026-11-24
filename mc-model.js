@@ -218,7 +218,7 @@ function aimMcMic(host) {
   host.mic.quaternion.setFromUnitVectors(host.up, host.axis);
 }
 
-function poseMc(host, t, distance, walking, voice, cameraAngle = 0) {
+function poseMc(host, t, distance, walking, voice, cameraAngle = 0, musicHit = 0, musicMic = 0) {
   const phase = distance * Math.PI * 2 / 1.16;
   const sway = walking * Math.sin(phase);
   host.body.position.y = .033 * walking * Math.abs(Math.sin(phase)) + .008 * Math.sin(t * 4);
@@ -231,11 +231,11 @@ function poseMc(host, t, distance, walking, voice, cameraAngle = 0) {
   });
 
   const welcome = ease.inOut(clamp01((t - MC_LINES[0].at) / .34)) * (1 - ease.inOut(clamp01((t - 2.69) / .48)));
-  const fist = ease.out(clamp01((t - (MC_FANFARE_AT - .29)) / .28)) *
-    (1 - ease.inOut(clamp01((t - (MC_FANFARE_AT + 1.02)) / .77)));
+  const fist = Math.max(musicHit, ease.out(clamp01((t - (MC_FANFARE_AT - .29)) / .28)) *
+    (1 - ease.inOut(clamp01((t - (MC_FANFARE_AT + 1.02)) / .77))));
   const reveal = ease.inOut(clamp01((t - (MC_LINES[2].at - .13)) / .42)) *
     (1 - ease.inOut(clamp01((t - (MC_SUBTITLE_OUT - .28)) / .74)));
-  const speaking = ease.out(clamp01(t / .22)) * (1 - ease.inOut(clamp01((t - MC_SUBTITLE_OUT) / .52)));
+  const speaking = Math.max(musicMic, ease.out(clamp01(t / .22)) * (1 - ease.inOut(clamp01((t - MC_SUBTITLE_OUT) / .52))));
   const side = Math.max(welcome, reveal, fist);
   placeMcArm(host, host.arms[0], lerp(-.339,-.155,speaking), lerp(.84,1.443,speaking), lerp(.03 + sway * .16,.36,speaking));
   placeMcArm(host, host.arms[1], lerp(.351,.665,side) - .12 * fist, .84 + .375 * welcome + .815 * fist + .388 * reveal,
@@ -254,7 +254,7 @@ function poseMc(host, t, distance, walking, voice, cameraAngle = 0) {
     brow.position.y = .168 + .020 * voice + .022 * fist + .010 * reveal * eyeSide;
     brow.rotation.z = eyeSide * (.18 * welcome + .19 * fist - .08 * reveal);
   }
-  host.smile.visible = fist > .50 && t >= MC_FANFARE_AT;
+  host.smile.visible = fist > .50 && (t >= MC_FANFARE_AT || musicHit > .7);
   host.smile.scale.y = .72 + .48 * voice;
   host.mouth.visible = !host.smile.visible;
   host.mouth.scale.set(1 + .17 * welcome + .14 * fist, .19 + .91 * voice + .13 * welcome, 1);

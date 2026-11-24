@@ -1,9 +1,9 @@
 "use strict";
 
 const MC_LINES = [
-  { at: .19, text: "Ladies and gentlemen!" },
-  { at: 3.67, text: "The 404 seat shuffle starts NOW!" },
-  { at: 11.07, text: "And first up is…" },
+  { at: .19, text: "皆さん、お待たせしました！" },
+  { at: 3.67, text: "404席替え、ただいまスタート！" },
+  { at: 11.07, text: "さあ、最初の発表は……" },
 ];
 const MC_SHORT_AT = 10.76;
 const MC_FANFARE_AT = 8.23;
@@ -11,6 +11,9 @@ const MC_SUBTITLE_OUT = 13.28;
 const MC_RISE_AT = 12.68;
 const MC_END = 13.34;
 const MC_WALK_END = 4.14;
+const MC_MUSIC_CALL_AT = 4.36;
+const MC_MUSIC_START_AT = MC_MUSIC_CALL_AT + 1.32;  // 「START」の頭
+const MC_MUSIC_CAPTION = "音楽、スタート！";
 const MC_SEEN_KEY = "404-mc-intro-seen";
 const MC_REACTIONS = {
   good: "GOOD!!",
@@ -40,16 +43,18 @@ async function decodeMcVoice(ctx, path) {
 
 async function loadMcHost() {
   const ctx = SND.ctx;
-  const [voice, { mergeGeometries }, reactions] = await Promise.all([
+  const [voice, { mergeGeometries }, reactions, musicCall] = await Promise.all([
     decodeMcVoice(ctx, "media/mc/voice.m4a"),
     import("three/addons/utils/BufferGeometryUtils.js"),
     Promise.all(Object.keys(MC_REACTIONS).map(async name =>
       [name, await decodeMcVoice(ctx, `media/mc/react/${name}.m4a`)]
     )).then(Object.fromEntries),
-    document.fonts.load('900 32px "MC Noto Sans"', "MC"),
+    decodeMcVoice(ctx, "media/mc/music-start.m4a"),
+    document.fonts.load('900 32px "MC Noto Sans"', "MC" + MC_MUSIC_CAPTION + MC_LINES.map(line => line.text).join("")),
   ]);
   const host = buildMcModel(mergeGeometries);
   host.voice = voice;
+  host.musicCall = musicCall;
   host.reactions = reactions;
   if (ctx) {
     host.reactionMeter = ctx.createAnalyser();
@@ -202,30 +207,30 @@ async function warmUpMc(host) {
   }
 }
 
-function mcShowCaption(t, line, previous, current, box) {
-  if (line < 0) {
+function mcShowCaption(t, cue, first, end, previous, current, box) {
+  if (!cue) {
     box.hidden = true;
     return;
   }
-  const progress = clamp01((t - MC_LINES[line].at) / .30);
+  const progress = clamp01((t - cue.at) / .30);
   const slide = ease.out(progress);
   box.hidden = false;
-  previous.hidden = line === 0;
+  previous.hidden = first;
   previous.style.transform = `translateY(${(1 - slide) * 100}%)`;
   previous.style.opacity = 1 - slide * .4;
   current.style.transform = `translateY(${(1 - slide) * 30}%)`;
   current.style.opacity = clamp01((progress - .18) / .82);
   const fade = .21;
-  box.style.opacity = 1 - ease.inOut(clamp01((t - (MC_END - fade)) / fade));
+  box.style.opacity = 1 - ease.inOut(clamp01((t - (end - fade)) / fade));
 }
 
-function mcCamera(rig, actor, t, short, offset, end) {
+function mcCamera(rig, actor, t, dialogue, short, offset, musicHit) {
   const { camera, aim, from, fromRotation, defaultPos, defaultRotation } = rig;
   const tracking = ease.inOut(clamp01((t - .65) / 1.7));
   const settle = ease.inOut(clamp01((t - 2.96) / 1.31));
-  const punch = ease.out(clamp01((t - (MC_FANFARE_AT - .15)) / .31));
+  const punch = Math.max(musicHit, ease.out(clamp01((dialogue - (MC_FANFARE_AT - .15)) / .31)));
   const pullBackAt = MC_LINES[2].at + (short ? .16 : 0);
-  const wide = ease.inOut(clamp01((t - pullBackAt) / (end - pullBackAt)));
+  const wide = ease.inOut(clamp01((dialogue - pullBackAt) / (MC_END - pullBackAt)));
   const x = lerp(lerp(4.85, 4.45, tracking), lerp(1.02, .55, punch), settle);
   const y = lerp(lerp(.70, 1.28, tracking), lerp(1.70, 1.82, punch), settle);
   const z = lerp(lerp(.49, 1.02, tracking), lerp(3.77, 2.73, punch), settle);
@@ -257,9 +262,15 @@ async function playMcIntro(unlocked) {
   let short = mcSeen;
   try { short ||= sessionStorage.getItem(MC_SEEN_KEY) === "1"; } catch {}
   const offset = short ? MC_SHORT_AT : 0;
-  const end = MC_END;
+  const withMusicCall = !short && !!host.musicCall;
+  const callEnd = withMusicCall ? MC_MUSIC_CALL_AT + host.musicCall.duration : MC_WALK_END;
+  const dialogueAt = short ? 0 : callEnd + .23;
+  const end = dialogueAt + MC_END;
+  const cues = MC_LINES.filter(line => line.at > offset).map(line => ({ ...line, at: line.at + dialogueAt }));
+  if (withMusicCall) cues.unshift({ at: MC_MUSIC_CALL_AT, text: MC_MUSIC_CAPTION });
   const start = ctx.currentTime + .035;
   const voice = ctx.createBufferSource();
+  const call = withMusicCall ? ctx.createBufferSource() : null;
   const gain = ctx.createGain();
   const meter = ctx.createAnalyser();
   meter.fftSize = 256;
@@ -267,6 +278,11 @@ async function playMcIntro(unlocked) {
   voice.buffer = host.voice;
   voice.connect(meter).connect(gain).connect(SND.master);
   voice.onended = () => { voice.disconnect(); meter.disconnect(); gain.disconnect(); };
+  if (call) {
+    call.buffer = host.musicCall;
+    call.connect(meter);
+    call.onended = () => call.disconnect();
+  }
   const camera = V.camera;
   const defaultPos = V.homePos.clone().add(V.camOffset);
   const defaultRotation = V.homeQuat.clone();
@@ -277,7 +293,7 @@ async function playMcIntro(unlocked) {
   const spotPower = V.spotPower;
   const warm = V.roomWarmLight.intensity;
   const signVisible = V.podiumSign.visible;
-  let line = -1, step = 0, fanfare = false, voiceLevel = 0, watchdog, rise;
+  let line = -1, step = 0, fanfare = false, voiceLevel = 0, watchdog, rise, footSound, dialogueDucked = false;
   let resolve;
   const complete = new Promise(done => { resolve = done; });
   const finish = () => resolve(false);
@@ -286,6 +302,7 @@ async function playMcIntro(unlocked) {
   let completed = false;
 
   function update(t) {
+    const dialogue = t - dialogueAt;
     const pace = clamp01((t - .09) / (MC_WALK_END - .09));
     host.path.getPointAt(pace, host.actor.position);
     host.path.getTangentAt(pace, heading);
@@ -293,12 +310,17 @@ async function playMcIntro(unlocked) {
     host.actor.rotation.y = lerp(Math.atan2(heading.x, heading.z), 0, turn);
     const walking = (1 - ease.out(clamp01((t - 3.90) / .24))) * clamp01(t / .28);
     const distance = host.routeLength * pace;
-    const inSpeech = t >= MC_LINES[0].at && t < host.voice.duration;
+    const musicTime = t - MC_MUSIC_START_AT;
+    const musicHit = withMusicCall ? ease.out(clamp01((musicTime + .18) / .25)) *
+      (1 - ease.inOut(clamp01((musicTime - .46) / .65))) : 0;
+    const musicMic = withMusicCall ? ease.out(clamp01((t - MC_MUSIC_CALL_AT + .19) / .19)) *
+      (1 - ease.inOut(clamp01((t - callEnd) / .20))) : 0;
+    const inSpeech = (dialogue >= MC_LINES[0].at && dialogue < host.voice.duration) || musicMic > 0;
     const speaking = inSpeech ? mcVoiceLevel(meter, wave) : 0;
     voiceLevel = lerp(voiceLevel, speaking, .47);
-    const wide = mcCamera(rig, host.actor, t, short, offset, end);
+    const wide = mcCamera(rig, host.actor, t, dialogue, short, offset, musicHit);
     const angle = Math.atan2(camera.position.x - host.actor.position.x, camera.position.z - host.actor.position.z) - host.actor.rotation.y;
-    poseMc(host, t, distance, walking, voiceLevel, Math.atan2(Math.sin(angle), Math.cos(angle)));
+    poseMc(host, dialogue, distance, walking, voiceLevel, Math.atan2(Math.sin(angle), Math.cos(angle)), musicHit, musicMic);
     V.spotFocusAt.copy(host.actor.position);
     V.spotFocus = .43 * (1 - wide);
     V.spotPower = lerp(spotPower * .32, spotPower, wide);
@@ -306,24 +328,27 @@ async function playMcIntro(unlocked) {
 
     const footfall = Math.floor((distance + .17) / .58);
     if (!short && walking > .08 && footfall > step) {
-      sfx("step", { vol: .34, pan: -.45 + pace * .45, rate: .86, vary: .12 });
+      footSound = mcTransitionSfx("foot", { vol: .89, pan: -.48 + pace * .48, vary: .13 });
       step = footfall;
     }
-    if (!fanfare && t >= (short ? MC_SHORT_AT + .08 : MC_FANFARE_AT)) {
+    if (withMusicCall && !dialogueDucked && dialogue >= 0) {
+      dialogueDucked = true;
+      bgmDuck(true, .59);
+    }
+    if (!fanfare && dialogue >= (short ? MC_SHORT_AT + .08 : MC_FANFARE_AT)) {
       fanfare = true;
       sfx("jingle_start", { vol: short ? .27 : .33 });
       const { x, z } = host.actor.position;
       const at = V.stage.worldToLocal(v3(x + .30, 1.41, z + .26));
       burst(at, [hdr(0xa7d7ff, 2.6), hdr(0xffd199, 2.8)], 24, 1.5, { life: .52, size: .039, grav: .2 });
     }
-    const nextLine = MC_LINES.findLastIndex(cue => t >= cue.at && (!short || cue.at > offset));
+    const nextLine = cues.findLastIndex(cue => t >= cue.at);
     if (nextLine !== line) {
       line = nextLine;
-      currentText.textContent = MC_LINES[line]?.text || "";
-      previousText.textContent = !short && line > 0 ? MC_LINES[line - 1].text : "";
+      currentText.textContent = cues[line]?.text || "";
+      previousText.textContent = cues[line - 1]?.text || "";
     }
-    mcShowCaption(t, line, previous, current, subtitles);
-    if (short) previous.hidden = true;
+    mcShowCaption(t, cues[line], line === 0, end, previous, current, subtitles);
   }
 
   try {
@@ -334,9 +359,15 @@ async function playMcIntro(unlocked) {
     skip.addEventListener("click", finish);
     document.addEventListener("visibilitychange", onHidden);
     ctx.addEventListener("statechange", onAudioState);
-    bgmDuck(true, .35);
-    voice.start(start, offset);
-    rise = mcTransitionSfx("rise", { vol: .29, delay: Math.max(0, start + MC_RISE_AT - offset - ctx.currentTime) });
+    bgmDuck(true, withMusicCall ? .82 : .35);
+    if (withMusicCall) {
+      call.start(start + MC_MUSIC_CALL_AT);
+      cueMcBgm(start + MC_MUSIC_START_AT);
+    } else {
+      bgm("main");
+    }
+    voice.start(start + dialogueAt, offset);
+    rise = mcTransitionSfx("rise", { vol: .29, delay: Math.max(0, start + dialogueAt + MC_RISE_AT - offset - ctx.currentTime) });
     mcSeen = true;
     try { sessionStorage.setItem(MC_SEEN_KEY, "1"); } catch {}
     V.camRig = () => {
@@ -357,7 +388,12 @@ async function playMcIntro(unlocked) {
     const now = ctx.currentTime;
     gain.gain.setTargetAtTime(0, now, .025);
     try { voice.stop(now + .10); } catch {}
-    if (!completed) rise?.stop(.035);
+    try { call?.stop(now + .10); } catch {}
+    if (!completed) {
+      cancelMcBgmCue();
+      rise?.stop(.035);
+      footSound?.stop(.08);
+    }
     skip.removeEventListener("click", finish);
     document.removeEventListener("visibilitychange", onHidden);
     ctx.removeEventListener("statechange", onAudioState);
