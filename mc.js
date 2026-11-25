@@ -124,7 +124,6 @@ async function loadMcHost() {
     moveMcSuit(host, MC_WALK_END);
     poseMcSuit(host, MC_WALK_END, 0);
   } else {
-    host.armRotation = new THREE.Quaternion();
     for (const [index, leg] of host.legs.entries()) {
       leg.marks = [mcFootMark(host, leg.side, 0, 0)];
       for (let step = index + 1; step <= MC_STEP_COUNT; step += 2) {
