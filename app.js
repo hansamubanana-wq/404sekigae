@@ -100,17 +100,25 @@ const seatMix = buildSeatMix(realSeatPositions, seatNeighbors, seatIndices);
 
 function shuffleSeatStudents(layout, movable) {
   const creatorIndex = movable.findIndex(key => layout[key].no === CREATOR_STUDENT_NO);
-  if (creatorIndex < 0) return chooseSeatMix(layout, movable, realSeatPositions, seatNeighbors, seatMix);
   const creator = layout[movable[creatorIndex]];
-  const rear = movable.filter(key => Number(key.split("-")[0]) >= rows - 2);
-  if (!rear.length) {
+  const rear = creator ? movable.filter(key => Number(key.split("-")[0]) >= rows - 2) : [];
+  const keepCreator = creator && !rear.length;
+  if (keepCreator) {
     console.warn("後ろ2列に動かせる席がないため、土蔵さんの席を維持します。");
-    const otherSeats = movable.filter((_, i) => i !== creatorIndex);
-    const result = chooseSeatMix(layout, otherSeats, realSeatPositions, seatNeighbors, seatMix);
-    result.splice(creatorIndex, 0, creator);
-    return result;
   }
-  return chooseSeatMix(layout, movable, realSeatPositions, seatNeighbors, seatMix, { student: creator, seats: rear });
+  const drawing = keepCreator ? movable.filter((_, i) => i !== creatorIndex) : movable;
+  const reserved = rear.length ? { student: creator, seats: rear } : undefined;
+  const boySeat = drawing.includes(FRONT_ROW.key) ? FRONT_ROW.key : undefined;
+  if (!boySeat && layout[FRONT_ROW.key].gender !== "boy") {
+    console.warn("最前列中央の席は固定または今回の対象外のため、女子の席を維持します。");
+  }
+  if (boySeat && !drawing.some(key => layout[key].gender === "boy" && layout[key] !== reserved?.student)) {
+    console.warn("最前列中央に割り当てられる男子が動かせる席にいないため、今回の席替えを見送ります。");
+    return null;
+  }
+  const result = chooseSeatMix(layout, drawing, realSeatPositions, seatNeighbors, seatMix, { reserved, boySeat });
+  if (keepCreator) result.splice(creatorIndex, 0, creator);
+  return result;
 }
 
 /* ---------- 保存 / 読み込み ---------- */
@@ -387,9 +395,9 @@ async function shuffleSeats(scope = null) {
   if (busy || !canStartShuffle) return;
   const movable = realSeatPositions.filter(pos => !locked.has(pos) && (!scope || scope.has(pos)));
   if (movable.length < (scope ? 2 : 1)) return;
-  setSeatMode(null);
-
   const shuffled = shuffleSeatStudents(seats, movable);
+  if (!shuffled) return;
+  setSeatMode(null);
   movable.forEach((pos, i) => { seats[pos] = shuffled[i]; });
 
   const operation = scope ? "選んだ席でやり直し" : "席替え";
