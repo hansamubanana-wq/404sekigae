@@ -12,9 +12,18 @@ function buildMcModel(mergeGeometries) {
   const faceInk = new THREE.MeshBasicMaterial({ vertexColors: true });
   const sphere = new THREE.SphereGeometry(1, 14, 9);
   const portrait = new THREE.SphereGeometry(1, 22, 14);
+  const smallSphere = new THREE.SphereGeometry(1, 8, 6);
   const bulb = (x, y, z, width, height, depth, color, tilt = 0) => [
     (width >= .25 ? portrait : sphere).clone().scale(width, height, depth).rotateZ(tilt).translate(x, y, z), color,
   ];
+  const detail = (x, y, z, width, height, depth, color) => [
+    smallSphere.clone().scale(width, height, depth).translate(x, y, z), color,
+  ];
+  const finger = (points, radius, color) => {
+    const curve = new THREE.CatmullRomCurve3(points.map(point => v3(...point)));
+    const tip = points[points.length - 1];
+    return [[new THREE.TubeGeometry(curve, 6, radius, 6), color], detail(...tip, radius, radius, radius, color)];
+  };
   const outline = (points, z, color) => {
     const shape = new THREE.Shape();
     shape.moveTo(...points[0]);
@@ -79,7 +88,7 @@ function buildMcModel(mergeGeometries) {
   body.add(coat);
   pack(body, [
     bulb(0, .79, 0, .25, .155, .175, ink),
-    bulb(0, 1.395, .019, .12, .148, .113, skin),
+    bulb(0, 1.403, .019, .124, .155, .113, skin),
     outline([[-.114,1.336],[.114,1.336],[.048,.901],[-.036,.901]], .204, 0xd6c2aa),
     outline([[-.245,1.30],[-.118,1.345],[-.035,.940],[-.153,1.118],[-.121,1.147]], .219, ink),
     outline([[.245,1.30],[.121,1.345],[.034,.940],[.153,1.118],[.12,1.147]], .219, ink),
@@ -140,38 +149,61 @@ function buildMcModel(mergeGeometries) {
   pack(smile, [grin(.038,-.077,.140,.004,0x51213d),grin(.026,-.030,.110,.009,ivory)], faceInk);
 
   const armLength = .27, forearmLength = .245;
+  const thumb = 0xf6ad79;
   const arms = [-1, 1].map(side => {
     const upper = group(body), lower = group(body), palm = group(body);
-    pack(upper, [bulb(0,armLength*.5,0,.100,.190,.109,navy)]);
-    pack(lower, [bulb(0,forearmLength*.48,0,.085,.146,.090,navy),bulb(0,.215,0,.085,.042,.087,ivory)]);
-    const fist = pack(palm, [
-      bulb(0,0,0,.092,.098,.075,skin),
-      bulb(-side*.063,.017,.028,.039,.066,.042,0xf6ad79,side * .36),
+    pack(upper, [
+      bulb(0,.120,0,.100,.188,.109,navy),
+      detail(0,0,0,.095,.095,.101,navy),
     ]);
-    const open = side === 1 ? pack(palm, [
-      bulb(0,.015,0,.084,.087,.050,skin),
-      bulb(-.051,.095,.005,.025,.078,.029,skin,.17),
-      bulb(-.008,.111,.008,.024,.090,.027,skin,.03),
-      bulb(.035,.102,.008,.023,.080,.027,skin,-.15),
-      bulb(.063,.073,.005,.020,.062,.024,skin,-.25),
-      bulb(-.074,.018,.021,.026,.050,.027,0xf6ad79,.50),
-    ]) : null;
+    pack(lower, [
+      bulb(0,.108,0,.085,.155,.090,navy),
+      detail(0,0,0,.080,.080,.083,navy),
+      [new V.RoundedBox(.139,.050,.147,1,.017).translate(0,.215,0),ivory],
+      detail(side*.069,.213,.018,.007,.010,.010,0xc79956),
+      detail(0,.244,0,.049,.035,.044,skin),
+    ]);
+    if (side < 0) return { side, upper, lower, palm };
+
+    // +Y runs to the fingertips and -Z to the thumb, with the palm facing inward at rest.
+    const knuckles = [-.042, -.012, .018, .045];
+    const palmBase = bulb(0,.036,.002,.043,.063,.063,skin);
+    const fist = pack(palm, [
+      palmBase,
+      ...knuckles.map((z, i) => detail(-.023,.074 - Math.abs(i - 1)*.007,z,.033,.033,.016,skin)),
+      ...finger([[.005,.013,-.042],[-.011,.041,-.067],[-.038,.059,-.048]],.019,thumb),
+    ]);
+    const open = pack(palm, [
+      bulb(0,.036,.002,.043,.063,.063,skin),
+      ...knuckles.map((z, i) => {
+        const tip = [.137, .157, .146, .119][i];
+        return detail(-.007,tip*.67,z*1.22,.018,tip*.38,.015,skin);
+      }),
+      ...finger([[0,.025,-.041],[-.008,.046,-.072],[-.023,.073,-.085]],.017,thumb),
+    ]);
     return { side, upper, lower, palm, fist, open };
   });
-  const mic = group(arms[0].palm, -.015,.012,.010);
-  pack(mic, [
-    [new THREE.CylinderGeometry(.038,.026,.240,12).translate(0,.014,0),0x252840],
-    [new THREE.CylinderGeometry(.041,.040,.025,12).translate(0,.127,0),0x7d89ae],
-    bulb(0,.165,0,.059,.061,.059,0xbdc4d1),
-    bulb(-.018,.182,.027,.019,.018,.019,0xf2ddbc),
+  // Fingers wrap around the back of the handle. The thumb presses from the front.
+  // The entire grip rotates as one piece, keeping the hand seated on the handle.
+  const handleX = .048;
+  pack(arms[0].palm, [
+    bulb(-.003,.002,0,.030,.062,.048,skin),
+    ...[-.040,-.013,.015,.043].flatMap(y => finger([
+      [-.012,y,-.032],[.035,y,-.041],[.078,y-.003,-.027],[.088,y-.005,.006],
+    ],.013,skin)),
+    ...finger([[-.017,.022,.026],[.015,.043,.044],[.045,.061,.039],[.069,.065,.028]],.017,thumb),
+    [new THREE.CylinderGeometry(.027,.023,.223,12).translate(handleX,.010,0),0x252840],
+    [new THREE.CylinderGeometry(.041,.034,.021,12).translate(handleX,.117,0),0x7d89ae],
+    bulb(handleX,.150,0,.052,.054,.052,0xbdc4d1),
+    detail(handleX-.018,.164,.033,.016,.016,.013,0xf2ddbc),
   ]);
 
   const legs = [-1, 1].map(side => {
     const hip = group(actor, side * .137, .791, 0);
     const knee = group(hip, 0, -.326, 0);
     const foot = group(knee, 0, -.335, 0);
-    pack(hip, [bulb(0,-.15,0,.128,.211,.142,ink)]);
-    pack(knee, [bulb(0,-.136,0,.100,.197,.109,ink)]);
+    pack(hip, [bulb(0,-.146,0,.128,.210,.142,ink),detail(0,0,0,.111,.106,.128,ink)]);
+    pack(knee, [bulb(0,-.140,0,.100,.197,.109,ink),detail(0,0,0,.093,.100,.104,ink)]);
     pack(foot, [
       bulb(0,-.032,.100,.116,.088,.176,0x151631),
       [new V.RoundedBox(.205,.036,.36,2,.014).translate(0,-.112,.090), 0x323a5a],
@@ -181,6 +213,7 @@ function buildMcModel(mergeGeometries) {
   });
   sphere.dispose();
   portrait.dispose();
+  smallSphere.dispose();
   const shadow = new THREE.Mesh(new THREE.PlaneGeometry(.95, .72), new THREE.MeshBasicMaterial({
     map: V.tex.glow, color: 0x100c24, opacity: .66, transparent: true, depthWrite: false,
   }));
@@ -188,8 +221,9 @@ function buildMcModel(mergeGeometries) {
   shadow.position.y = .024;
   actor.add(shadow);
 
-  return { actor, body, head, eyes, mouth, smile, arms, mic, legs, armLength, forearmLength,
+  return { actor, body, head, eyes, mouth, smile, arms, legs, armLength, forearmLength,
     shoulder: v3(), wrist: v3(), elbow: v3(), axis: v3(), bend: v3(), up: v3(0, 1, 0), down: v3(0, -1, 0),
+    handAcross: v3(), handDepth: v3(), handBasis: new THREE.Matrix4(), handRoll: new THREE.Quaternion(), micRest: v3(.16,.91,.39).normalize(),
     heel: v3(0,-.130,-.076), heelOffset: v3(), right: v3(1,0,0),
     inverseHip: new THREE.Quaternion(), footRotation: new THREE.Quaternion(), footPitch: new THREE.Quaternion() };
 }
@@ -210,14 +244,25 @@ function placeMcArm(host, arm, x, y, z) {
   arm.lower.position.copy(elbow);
   arm.lower.quaternion.setFromUnitVectors(up, axis.subVectors(wrist, elbow).normalize());
   arm.palm.position.copy(wrist);
-  arm.palm.quaternion.copy(arm.lower.quaternion);
 }
 
-function aimMcMic(host) {
-  // マイクの先を口の横に向け、正面から表情が見えるようにする。
-  const { palm } = host.arms[0];
-  host.axis.set(.006, 1.565, .30).sub(palm.position).applyQuaternion(host.armRotation.copy(palm.quaternion).invert()).normalize();
-  host.mic.quaternion.setFromUnitVectors(host.up, host.axis);
+function orientMcHand(host, palm, direction, roll) {
+  const { right, handAcross, handDepth, handBasis, handRoll, up } = host;
+  handDepth.crossVectors(right, direction).normalize();
+  handAcross.crossVectors(direction, handDepth);
+  palm.quaternion.setFromRotationMatrix(handBasis.makeBasis(handAcross, direction, handDepth));
+  palm.quaternion.multiply(handRoll.setFromAxisAngle(up, roll));
+}
+
+function poseMcHands(host, speaking, presentation, gesture) {
+  const [grip, free] = host.arms;
+  const { axis, head, up } = host;
+  // Aim just below and in front of the moving mouth, with the handle tilted down.
+  axis.set(-.055,-.115,.35).applyQuaternion(head.quaternion).add(head.position).sub(grip.palm.position).normalize();
+  axis.lerp(host.micRest, 1 - speaking).normalize();
+  orientMcHand(host, grip.palm, axis, -.15 + .27 * gesture);
+  axis.copy(up).applyQuaternion(free.lower.quaternion);
+  orientMcHand(host, free.palm, axis, -1.25 * presentation);
 }
 
 // Quaternius Walk supplies the swing from .025 to .725 s and the stride starting at .100 s.
@@ -312,11 +357,10 @@ function poseMc(host, t, walkTime, walking, voice, cameraAngle = 0, musicHit = 0
   const free = host.arms[1];
   free.open.visible = Math.max(welcome, reveal) > .35 && fist < .40;
   free.fist.visible = !free.open.visible;
-  aimMcMic(host);
-
   const glance = walking * THREE.MathUtils.clamp(cameraAngle * .72, -.69, .65);
   host.head.rotation.set(-.031 * voice - .050 * fist - .055 * anticipation,
     glance - .09 * reveal + .22 * anticipation * scan, .07 * welcome + sway * .034 - .08 * fist);
+  poseMcHands(host, speaking, Math.max(welcome, reveal) * (1 - fist), fist * .6 + .16 * voice);
   const blinkPhase = Math.min(Math.abs(t - .85), Math.abs(t - 3.31), Math.abs(t - 5.67), Math.abs(t - 7.90), Math.abs(t - 10.72), Math.abs(t - 12.40));
   const blink = clamp01(blinkPhase / .082);
   for (const { eye, brow, side: eyeSide } of host.eyes) {
@@ -347,9 +391,8 @@ function poseMcWaiting(host, t, voice, gesture, strong) {
   const free = host.arms[1];
   free.open.visible = gesture > .35 && !strong;
   free.fist.visible = !free.open.visible;
-  aimMcMic(host);
-
   host.head.rotation.set(-.025 * sway - .09 * gesture, .09 * Math.sin(t * .73), .026 * sway);
+  poseMcHands(host, gesture, strong ? 0 : gesture, gesture * Math.sin(t * 8) * .65);
   const blink = clamp01(Math.abs(t % 3.83 - 3.42) / .082);
   for (const { eye, brow, side } of host.eyes) {
     eye.scale.y = Math.max(.07, blink * (1 + .10 * voice));
