@@ -73,9 +73,11 @@ function scoreSeatMix(genders, neighbors, seen, queue) {
   return { violations, largest };
 }
 
-function chooseSeatMix(layout, movable, positions, neighbors, mix) {
+function chooseSeatMix(layout, movable, positions, neighbors, mix, reserved) {
   const { random, floor } = Math;
   const indices = movable.map(key => mix.indexByKey.get(key));
+  const allowed = reserved?.seats.map(key => mix.indexByKey.get(key));
+  const reservedGender = reserved?.student.gender === "boy" ? 1 : 0;
   const open = new Set(indices);
   const genders = new Uint8Array(positions.length);
   const seen = new Uint8Array(positions.length);
@@ -104,7 +106,7 @@ function chooseSeatMix(layout, movable, positions, neighbors, mix) {
     choices.push({ top, bottom, end: total });
   }
 
-  let best, bestScore = Infinity, bestResult, accepted = false;
+  let best, bestScore = Infinity, bestResult, bestReserved = -1, accepted = false;
   const bothGenders = indices.some(i => genders[i] !== genders[indices[0]]);
   const budget = bothGenders ? SEAT_SHUFFLE_LIMIT : 1;
   for (let step = 0; step < budget; step++) {
@@ -126,9 +128,19 @@ function chooseSeatMix(layout, movable, positions, neighbors, mix) {
         genders[b] = gender;
       }
     }
+    // Drawing the seat independently keeps all eligible seating assignments equally likely.
+    const seat = allowed ? allowed[floor(random() * allowed.length)] : -1;
+    if (seat >= 0 && genders[seat] !== reservedGender) {
+      if (step < budget - 1 || best) continue;
+      // Guarantee a rear seat even if every sampled layout lacked a matching draw.
+      const swap = indices.find(i => genders[i] === reservedGender);
+      genders[swap] = genders[seat];
+      genders[seat] = reservedGender;
+    }
     const result = scoreSeatMix(genders, neighbors, seen, queue);
     if (!result.violations && result.largest <= SEAT_CLUSTER_LIMIT) {
       best = genders;
+      bestReserved = seat;
       accepted = true;
       break;
     }
@@ -137,6 +149,7 @@ function chooseSeatMix(layout, movable, positions, neighbors, mix) {
       bestScore = score;
       bestResult = result;
       best = genders.slice();
+      bestReserved = seat;
     }
   }
   if (!accepted) {
@@ -146,8 +159,9 @@ function chooseSeatMix(layout, movable, positions, neighbors, mix) {
   const byGender = [[], []];
   for (const key of movable) {
     const student = layout[key];
+    if (student === reserved?.student) continue;
     byGender[Number(student.gender === "boy")].push(student);
   }
   const girls = shuffleArray(byGender[0]), boys = shuffleArray(byGender[1]);
-  return indices.map(i => (best[i] ? boys : girls).pop());
+  return indices.map(i => i === bestReserved ? reserved.student : (best[i] ? boys : girls).pop());
 }
