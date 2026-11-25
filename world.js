@@ -333,6 +333,7 @@ uniform float uTime, uDim; uniform vec3 uTint;
 uniform vec3 uSpot[4]; uniform vec3 uSpotCol[4]; uniform vec4 uFocus; uniform vec3 uFocusCol;
 uniform sampler2D uDeskShadows; uniform vec2 uDeskShadowScale;
 uniform float uSideLightX;
+uniform float uBeat, uBeatAmt, uHazeZ; uniform vec3 uWaveCol;
 varying vec3 vW;
 void main(){
   vec2 p = vW.xz;
@@ -340,7 +341,23 @@ void main(){
   float n = fbm(vec3(p*.16, uTime*.03));
   col += vec3(.05,.02,.10) * smoothstep(.40,.85,n);
   float shadow = texture2D(uDeskShadows, p * uDeskShadowScale + .5).r;
+  // 光る格子: 机の間隔に合わせた細い線。拍ごとに手前から奥へ光の波が流れる
+  vec2 g = p / vec2(${(SX / 2).toFixed(2)}, ${(SZ / 2).toFixed(2)}) + vec2(.5, .5);
+  vec2 gw = fwidth(g);
+  vec2 gd = abs(fract(g) - .5);
+  vec2 gl2 = 1.0 - smoothstep(gw * .6, gw * 1.6, .5 - gd);
+  float grid = max(gl2.x, gl2.y) * (1.0 - smoothstep(.35, 1.2, max(gw.x, gw.y)));
+  float gridFade = 1.0 - smoothstep(6.0, 15.0, length(p * vec2(.75, 1.0)));
+  float beatT = fract(uBeat);
+  float waveZ = mix(7.5, uHazeZ, beatT);
+  float wave = exp(-pow((p.y - waveZ) / 1.1, 2.0)) * (1.0 - beatT) * uBeatAmt;
+  vec3 gridCol = mix(vec3(.16,.22,.75), vec3(.45,.14,.80), smoothstep(-8.0, 8.0, p.x));
+  col += gridCol * grid * gridFade * (.085 + wave * .55) * (1.0 - shadow * .8);
+  col += uWaveCol * wave * gridFade * .035;
   col *= 1.0 - shadow * .92;
+  // 奥は光る霧に溶ける
+  float haze = smoothstep(uHazeZ + 5.0, uHazeZ + 1.0, p.y);
+  col = mix(col, vec3(.10,.10,.30) + uWaveCol * .03, haze * .85);
   vec3 spot = vec3(0.0);
   for (int i = 0; i < 4; i++){
     float d = length(p - uSpot[i].xy);
@@ -355,6 +372,27 @@ void main(){
   col += neon * (line * .42 + halo * .045) * (1.0 - smoothstep(5.6, 9.0, abs(p.y + .6)));
   col *= (1.0 - smoothstep(9.0, 30.0, length(p)));
   gl_FragColor = vec4(col * uDim * uTint, 1.0);
+}
+`;
+
+// 奥の霧と光の帯: 壁の手前に1枚、加算で重ねる
+const HAZE_FRAG = `
+uniform float uTime, uDim, uBeatAmt; uniform vec3 uTint, uWaveCol;
+varying vec3 vW;
+float ribbon(float y, float c, float w){ float d = (y - c) / w; return exp(-d*d); }
+void main(){
+  float x = vW.x, y = vW.y;
+  float fogY = exp(-max(y, 0.0) * .42);
+  vec3 col = vec3(.12,.11,.36) * fogY * .9;
+  float side = 1.0 - smoothstep(14.0, 30.0, abs(x));
+  float r1 = ribbon(y, 4.2 + 1.3*sin(x*.13 + uTime*.21) + .5*sin(x*.31 - uTime*.13), .32 + .16*sin(x*.09 + uTime*.1));
+  float r2 = ribbon(y, 6.8 + 1.6*sin(x*.10 - uTime*.17 + 2.0), .26 + .1*sin(x*.2 + 1.0));
+  float r3 = ribbon(y, 2.6 + .9*sin(x*.19 + uTime*.26 + 4.0), .22);
+  float flow = .65 + .35*sin(x*.4 - uTime*.9);
+  col += vec3(.25,.30,1.0) * r1 * .16 * flow;
+  col += vec3(.85,.20,.75) * r2 * .11 * (1.3 - flow*.6);
+  col += mix(vec3(.15,.75,.85), uWaveCol, .5) * r3 * (.09 + uBeatAmt * .05);
+  gl_FragColor = vec4(col * side * uDim * uTint, 1.0);
 }
 `;
 
@@ -658,6 +696,10 @@ function buildRoom() {
         uDeskShadows: { value: shadows.texture },
         uDeskShadowScale: { value: shadows.scale },
         uSideLightX: { value: cols * SX / 2 + .28 },
+        uBeat: { value: 0 },
+        uBeatAmt: { value: 0 },
+        uHazeZ: { value: PODIUM_Z - 2.6 },
+        uWaveCol: { value: v3(.35, .45, 1) },
       },
     }));
   floor.rotation.x = -Math.PI / 2;
@@ -672,6 +714,17 @@ function buildRoom() {
   wall.position.set(0, 15, PODIUM_Z - 2.6);
   V.scene.add(wall);
   V.wallFrame = wall.material.uniforms.uWallFrame;
+
+  const haze = new THREE.Mesh(
+    new THREE.PlaneGeometry(64, 12),
+    new THREE.ShaderMaterial({
+      vertexShader: WORLD_VERT, fragmentShader: HAZE_FRAG,
+      uniforms: { ...V.uniforms, uBeatAmt: floor.material.uniforms.uBeatAmt, uWaveCol: floor.material.uniforms.uWaveCol },
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    }));
+  haze.position.set(0, 6, PODIUM_Z - 1.6);
+  haze.renderOrder = -1;
+  V.scene.add(haze);
 
   // 教卓: 青紫のステージ台 + 金の文字
   const podium = new THREE.Group();
@@ -1275,6 +1328,12 @@ function frame(now) {
   // スポットライト
   V.spotT = (V.spotT || 0) + dt * V.spotSpeed;
   const fu = V.floor.material.uniforms;
+  // 床の光の波: 曲が鳴っていれば拍ごと、無音ならゆっくり
+  const lead = grooveLayers[0].weight >= grooveLayers[1].weight ? grooveLayers[0] : grooveLayers[1];
+  const beatOn = clamp01(groove.presence);
+  fu.uBeat.value = beatOn > .01 ? lead.phase : t * .35;
+  fu.uBeatAmt.value = lerp(.35, .55 + .9 * groove.power, beatOn);
+  if (beatOn > .01) fu.uWaveCol.value.set(groove.r, groove.g, groove.b).divideScalar(Math.max(groove.presence, .01));
   const spotPower = V.spotPower * (1 + .14 * groove.pulse * groove.power);
   V.spots.forEach((s, i) => {
     const a = V.spotT * .35 + s.phase;
