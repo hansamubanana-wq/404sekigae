@@ -454,7 +454,15 @@ async function shuffleSeats(scope = null) {
   } finally {
     endMcShow();
     bgmHome();
-    if (worldReady) { endTension(); letterbox(false); V.camRig = null; V.billboard = false; setPlateDim(1); V.spotPower = 1; }
+    if (worldReady) {
+      endTension();
+      letterbox(false);
+      V.camRig = null;
+      V.billboard = false;
+      V.uniforms.uDim.value = 1;
+      V.spotPower = 1;
+      focusAnnouncement([], true);
+    }
     hidden.clear();
     replayScope = null;
     recordSeatHistory(operation);

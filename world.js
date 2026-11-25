@@ -18,6 +18,7 @@ const HEX = { boy: 0x2f8cff, girl: 0xff4fb0, gold: 0xfbbf24, white: 0xffffff };
 const FONT = `"M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Hiragino Sans", sans-serif`;
 
 const FACE_W = 1.55, FACE_H = 0.83;   // 名札の大きさ
+const PLATE_FRONT_LIGHT = .86, PLATE_BACK_LIGHT = .9;
 const SX = 1.8, SZ = 1.5;             // 机の間隔
 const DESK_SURFACE_Y = .485;          // 天板の上面
 const PLATE_Y = 1.02;                 // 名札の高さ
@@ -80,12 +81,12 @@ function drawFace(ctx, W, H, s, o = {}) {
     ctx.beginPath();
     ctx.roundRect(lw, lw, W - lw * 2, H - lw * 2, r);
     const g = ctx.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, mixHex(col, "#0b1030", .30));
-    g.addColorStop(1, mixHex(col, "#060918", .74));
+    g.addColorStop(0, mixHex(col, "#0b1030", o.badge ? .57 : .30));
+    g.addColorStop(1, mixHex(col, "#060918", o.badge ? .86 : .74));
     ctx.fillStyle = g;
     ctx.fill();
     const gl = ctx.createLinearGradient(0, 0, 0, H * .55);
-    gl.addColorStop(0, "rgba(255,255,255,.20)");
+    gl.addColorStop(0, o.badge ? "rgba(255,255,255,.10)" : "rgba(255,255,255,.20)");
     gl.addColorStop(1, "rgba(255,255,255,0)");
     ctx.fillStyle = gl;
     ctx.fill();
@@ -109,9 +110,9 @@ function drawFace(ctx, W, H, s, o = {}) {
     const kana = o.kana ?? s.kana;
     if (kana) {
       ctx.textAlign = "center";
-      ctx.font = `800 ${H * (o.label ? .1 : .12)}px ${FONT}`;
-      ctx.fillStyle = "rgba(255,255,255,.8)";
-      ctx.fillText(kana, W / 2, H * (o.label ? .36 : .33));
+      ctx.font = `${o.badge ? 900 : 800} ${H * (o.label ? .1 : .12)}px ${FONT}`;
+      ctx.fillStyle = o.badge ? "#fff" : "rgba(255,255,255,.8)";
+      ctx.fillText(kana, W / 2, H * (o.label ? .36 : .33), W * .82);
     }
   }
 
@@ -125,10 +126,20 @@ function drawFace(ctx, W, H, s, o = {}) {
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
   ctx.fillStyle = "#ffffff";
-  if (!o.textOnly) { ctx.shadowColor = col; ctx.shadowBlur = H * .06; }
-  ctx.fillText(o.name ?? s.name, W / 2 - fullW / 2, H * (o.label ? .66 : .64));
+  const name = o.name ?? s.name;
+  const x = W / 2 - fullW / 2, y = H * (o.label ? .66 : .64);
+  if (o.badge) {
+    ctx.lineJoin = "round";
+    ctx.lineWidth = H * .025;
+    ctx.strokeStyle = "#080b20";
+    ctx.strokeText(name, x, y);
+  } else if (!o.textOnly) {
+    ctx.shadowColor = col;
+    ctx.shadowBlur = H * .06;
+  }
+  ctx.fillText(name, x, y);
   ctx.shadowBlur = 0;
-  return { x0: W / 2 - fullW / 2, fs };
+  return { x0: x, fs };
 }
 
 function drawBack(ctx, W, H) {
@@ -181,6 +192,54 @@ function glowCanvas() {
   g.addColorStop(1, "rgba(255,255,255,0)");
   x.fillStyle = g; x.fillRect(0, 0, 128, 128);
   return c;
+}
+
+function softShadowCanvas() {
+  const c = makeCanvas(64, 64), ctx = c.getContext("2d");
+  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, "rgba(255,255,255,1)");
+  g.addColorStop(.36, "rgba(255,255,255,.85)");
+  g.addColorStop(.68, "rgba(255,255,255,.38)");
+  g.addColorStop(.88, "rgba(255,255,255,.07)");
+  g.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, c.width, c.height);
+  return c;
+}
+
+// 天板の下に広がる影と、台座が床に接するところの濃い影を1枚に焼く。
+function bakeDeskShadows() {
+  const width = 512, height = 256;
+  const spanX = cols * SX + .4, spanZ = rows * SZ + .4;
+  const alpha = new Uint8Array(width * height);
+  const fade = (x, z, halfWidth, halfDepth, blur) => {
+    const u = Math.max(0, Math.abs(x) - halfWidth);
+    const v = Math.max(0, Math.abs(z) - halfDepth);
+    const t = clamp01(Math.hypot(u, v) / blur);
+    return 1 - t * t * (3 - 2 * t);
+  };
+  for (const key of realSeatPositions) {
+    const { x, z } = seatXZ(key);
+    const centerX = (x / spanX + .5) * width;
+    const centerZ = (z / spanZ + .5) * height;
+    const radiusX = 1.05 * width / spanX, radiusZ = .76 * height / spanZ;
+    for (let j = Math.floor(centerZ - radiusZ); j < centerZ + radiusZ; j++) {
+      const dz = (j + .5 - centerZ) * spanZ / height;
+      for (let i = Math.floor(centerX - radiusX); i < centerX + radiusX; i++) {
+        const dx = (i + .5 - centerX) * spanX / width;
+        const top = .54 * fade(dx, dz, .57, .28, .47);
+        const base = .52 * fade(dx, dz, .58, .29, .18);
+        const offset = j * width + i;
+        alpha[offset] = Math.round(255 - (255 - alpha[offset]) * (1 - top) * (1 - base));
+      }
+    }
+  }
+  const texture = new THREE.DataTexture(alpha, width, height, THREE.RedFormat);
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.generateMipmaps = true;
+  texture.needsUpdate = true;
+  return { texture, scale: new THREE.Vector2(1 / spanX, 1 / spanZ) };
 }
 
 function frameCanvas() {
@@ -272,6 +331,7 @@ void main(){
 const FLOOR_FRAG = GLSL_NOISE + `
 uniform float uTime, uDim; uniform vec3 uTint;
 uniform vec3 uSpot[4]; uniform vec3 uSpotCol[4]; uniform vec4 uFocus; uniform vec3 uFocusCol;
+uniform sampler2D uDeskShadows; uniform vec2 uDeskShadowScale;
 varying vec3 vW;
 void main(){
   vec2 p = vW.xz;
@@ -287,6 +347,7 @@ void main(){
     col += uSpotCol[i] * (1.0 - smoothstep(0.0, uSpot[i].z, d)) * .45;
   }
   col += uFocusCol * uFocus.w * (1.0 - smoothstep(0.0, 1.8, length(p - uFocus.xz))) * 1.4;
+  col *= 1.0 - texture2D(uDeskShadows, p * uDeskShadowScale + .5).r;
   col *= (1.0 - smoothstep(9.0, 30.0, length(p)));
   gl_FragColor = vec4(col * uDim * uTint, 1.0);
 }
@@ -457,6 +518,7 @@ async function initWorld(beforeNames) {
 
   V.tex = {
     glow: canvasTex(glowCanvas()),
+    softShadow: new THREE.CanvasTexture(softShadowCanvas()),
     lock: canvasTex(lockCanvas()),
     frame: canvasTex(frameCanvas()),
   };
@@ -501,7 +563,7 @@ async function prepareNameAssets(renderer) {
     return tex;
   };
   for (const [i, s] of studentsOriginal.entries()) {
-    V.plateTex[s.no] = face(s, 640, 342, { badge: true });
+    V.plateTex[s.no] = face(s, 512, 274, { badge: true });
     V.cardFaces[s.no] = [
       face(s, 640, 342),
       face(s, 1024, 548, { label: true, separateLabel: true }),
@@ -576,6 +638,7 @@ function bakeWall(renderer) {
 
 /* ---------------- 教室 ---------------- */
 function buildRoom() {
+  const shadows = bakeDeskShadows();
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(90, 90),
     new THREE.ShaderMaterial({
@@ -587,6 +650,8 @@ function buildRoom() {
         uSpotCol: { value: [v3(), v3(), v3(), v3()] },
         uFocus: { value: new THREE.Vector4(0, 0, 0, 0) },
         uFocusCol: { value: v3(1, .8, .4) },
+        uDeskShadows: { value: shadows.texture },
+        uDeskShadowScale: { value: shadows.scale },
       },
     }));
   floor.rotation.x = -Math.PI / 2;
@@ -692,9 +757,9 @@ function buildDesks() {
     const pivot = new THREE.Group();
     pivot.position.set(x, PLATE_Y, z + .12);
     const flipper = new THREE.Group();
-    const front = new THREE.Mesh(plateGeo, new THREE.MeshBasicMaterial({ transparent: true, alphaTest: .05, color: new THREE.Color(.86, .86, .86) }));
+    const front = new THREE.Mesh(plateGeo, new THREE.MeshBasicMaterial({ transparent: true, alphaTest: .05, color: new THREE.Color().setScalar(PLATE_FRONT_LIGHT) }));
     front.position.z = .004;
-    const back = new THREE.Mesh(plateGeo, new THREE.MeshBasicMaterial({ map: V.tex.back, transparent: true, alphaTest: .05, color: new THREE.Color(.9, .9, .9) }));
+    const back = new THREE.Mesh(plateGeo, new THREE.MeshBasicMaterial({ map: V.tex.back, transparent: true, alphaTest: .05, color: new THREE.Color().setScalar(PLATE_BACK_LIGHT) }));
     back.rotation.y = Math.PI;
     back.position.z = -.004;
     flipper.add(front, back);
@@ -711,14 +776,21 @@ function buildDesks() {
 
     front.userData.key = back.userData.key = key;
     const [row, col] = key.split("-").map(Number);
-    V.seat[key] = { index, row, col, pivot, motion, flipper, front, back, frame, lock, phase: Math.random() * 6.28, base: v3(x, PLATE_Y, z + .12) };
+    V.seat[key] = {
+      index, row, col, pivot, motion, flipper, front, back, frame, lock,
+      light: 1, stripColor: new THREE.Color(), glowColor: new THREE.Color(),
+      phase: Math.random() * 6.28, base: v3(x, PLATE_Y, z + .12),
+    };
+    ped.setColorAt(index, V.deskParts.color.setScalar(1));
+    top.setColorAt(index, V.deskParts.color);
   });
 }
 
 function setDeskStrip(seat, color, intensity = 1) {
-  const parts = V.deskParts;
-  parts.strip.setColorAt(seat.index, parts.color.copy(color).multiplyScalar(intensity));
-  parts.strip.instanceColor.needsUpdate = true;
+  const { strip, color: scratch } = V.deskParts;
+  seat.stripColor.copy(color).multiplyScalar(intensity);
+  strip.setColorAt(seat.index, scratch.copy(seat.stripColor).multiplyScalar(seat.light));
+  strip.instanceColor.needsUpdate = true;
 }
 
 /* ---------------- 席の見た目 ---------------- */
@@ -732,10 +804,11 @@ function seatLook(key) {
   o.front.material.map = V.plateTex[s.no];
   const { glow, color } = V.deskParts;
   setDeskStrip(o, color.set(isHidden ? 0x8fa3ff : HEX[s.gender]), isHidden ? .35 : 2.4);
-  glow.setColorAt(o.index, color.set(isHidden ? 0x6070ff : HEX[s.gender]).multiplyScalar(isHidden ? .08 : .32));
+  o.glowColor.setHex(isHidden ? 0x6070ff : HEX[s.gender]).multiplyScalar(isHidden ? .08 : .32);
+  glow.setColorAt(o.index, color.copy(o.glowColor).multiplyScalar(o.light));
   glow.instanceColor.needsUpdate = true;
   o.frame.visible = isLocked || isSelected;
-  if (o.frame.visible) o.frame.material.color.setHex(isLocked ? HEX.gold : 0x67e8f9).multiplyScalar(1.25);
+  if (o.frame.visible) o.frame.material.color.setHex(isLocked ? HEX.gold : 0x67e8f9).multiplyScalar(1.25 * o.light);
   o.lock.visible = isLocked;
 }
 
@@ -1226,15 +1299,38 @@ function frame(now) {
 
 function addFrameHook(f) { (V.onFrame ||= new Set()).add(f); return () => V.onFrame.delete(f); }
 
-// 名札と舞台の明るさ
-function setPlateDim(k) {
-  V.plateDim = k;
-  for (const key in V.seat) {
-    const o = V.seat[key];
-    o.front.material.color.setScalar(.86 * k);
-    o.back.material.color.setScalar(.9 * k);
+// 発表対象以外の机と名札を同じ明るさでフェードさせる。
+function focusAnnouncement(keys = [], immediate = false) {
+  const targets = new Set(keys);
+  const current = V.announcementTargets;
+  if (!immediate && current?.size === targets.size && keys.every(key => current.has(key))) return;
+  V.announcementTargets = targets;
+  const transition = V.announcementLight = [];
+  for (const [key, seat] of Object.entries(V.seat)) {
+    const light = targets.size && !targets.has(key) ? .45 : 1;
+    if (seat.light !== light) transition.push({ seat, from: seat.light, light });
   }
-  V.uniforms.uDim.value = Math.max(.05, k);
+  if (!transition.length) return;
+  const { ped, top, strip, glow, color } = V.deskParts;
+  const apply = t => {
+    if (V.announcementLight !== transition) return;
+    for (const { seat, from, light } of transition) {
+      const previous = seat.light;
+      const k = seat.light = lerp(from, light, t);
+      seat.front.material.color.setScalar(PLATE_FRONT_LIGHT * k);
+      seat.back.material.color.setScalar(PLATE_BACK_LIGHT * k);
+      seat.lock.material.color.setScalar(k);
+      seat.frame.material.color.multiplyScalar(k / previous);
+      ped.setColorAt(seat.index, color.setScalar(k));
+      top.setColorAt(seat.index, color);
+      strip.setColorAt(seat.index, color.copy(seat.stripColor).multiplyScalar(k));
+      glow.setColorAt(seat.index, color.copy(seat.glowColor).multiplyScalar(k));
+    }
+    ped.instanceColor.needsUpdate = top.instanceColor.needsUpdate = true;
+    strip.instanceColor.needsUpdate = glow.instanceColor.needsUpdate = true;
+  };
+  if (immediate) apply(1);
+  else return tween(400 * TIME_SCALE, apply);
 }
 
 function shake(amt) { V.shakeAmt = Math.max(V.shakeAmt, amt); }

@@ -219,14 +219,14 @@ function buildMcModel(mergeGeometries) {
   sphere.dispose();
   portrait.dispose();
   smallSphere.dispose();
-  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(.95, .72), new THREE.MeshBasicMaterial({
-    map: V.tex.glow, color: 0x100c24, opacity: .66, transparent: true, depthWrite: false,
+  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(1.12, .86), new THREE.MeshBasicMaterial({
+    map: V.tex.softShadow, color: 0x050613, opacity: .63, transparent: true, depthWrite: false,
   }));
   shadow.rotation.x = -Math.PI / 2;
   shadow.position.y = .024;
   actor.add(shadow);
 
-  return { actor, body, head, eyes, mouth, coat, bow, fringe, arms, legs, armLength, forearmLength,
+  return { actor, shadow, body, head, eyes, mouth, coat, bow, fringe, arms, legs, armLength, forearmLength,
     voiceShape: [.5,.5],
     motion: { at: null, blinkAt: 0, fabric: 0, fabricSpeed: 0, hair: 0, hairSpeed: 0, spread: .5, opening: .5 },
     shoulder: v3(), wrist: v3(), elbow: v3(), axis: v3(), bend: v3(), up: v3(0, 1, 0), down: v3(0, -1, 0),
@@ -438,6 +438,7 @@ function poseMc(host, t, walkTime, walking, voice, cameraAngle = 0, musicHit = 0
   const phase = walkTime * Math.PI / MC_STEP_INTERVAL;
   const stride = walkTime % (2 * MC_STEP_INTERVAL) / (2 * MC_STEP_INTERVAL);
   const sway = walking * Math.sin(phase);
+  updateMcShadow(host, walking, sway * sway, musicHit);
   const lz = walking * mcWalkCurve(MC_WALK_LEFT_HAND_Z, stride, true);
   const rz = walking * mcWalkCurve(MC_WALK_RIGHT_HAND_Z, stride, true);
   const ly = walking * (mcWalkCurve(MC_WALK_LEFT_HAND_Y, stride, true) + .68);
@@ -473,6 +474,7 @@ function poseMc(host, t, walkTime, walking, voice, cameraAngle = 0, musicHit = 0
 
 function poseMcWaiting(host, t, voice, gesture, strong) {
   const sway = Math.sin(t * 1.65);
+  updateMcShadow(host, 0, 0, .25 * gesture);
   host.body.position.y = .012 + .012 * sway;
   host.body.rotation.z = .028 * sway - .035 * gesture;
   host.body.rotation.y = 0;
@@ -494,4 +496,10 @@ function poseMcWaiting(host, t, voice, gesture, strong) {
   poseMcHands(host, gesture, strong ? 0 : gesture, gesture * Math.sin(t * 8) * .65);
   const angle = Math.atan2(V.camera.position.x - host.actor.position.x,V.camera.position.z - host.actor.position.z);
   animateMcDetails(host,t,voice,gesture,.30*sway + .38*gesture + .33*groove.swing*groove.power,angle);
+}
+
+function updateMcShadow(host, walking, step, accent) {
+  const beat = clamp01(Math.max(accent, groove.pulse * groove.power * groove.presence));
+  host.shadow.scale.set(1 + .08 * step + .06 * beat, 1 + .14 * walking + .07 * beat, 1);
+  host.shadow.material.opacity = .63 + .08 * step - .07 * beat;
 }

@@ -685,6 +685,7 @@ async function land(s, key, style = "pop") {
   const col = hdr(HEX[s.gender], 1);
   card().visible = false;
   hidden.delete(key);
+  if (!hidden.size) focusAnnouncement();
   seatLook(key);
   protectGrooveName(key);
   boostGroove(950, .30);
@@ -781,6 +782,7 @@ async function announce(s, key, index, total, force = {}) {
   setHero(s, label);
   card().visible = false;
   V.particles.pts.visible = false;
+  focusAnnouncement([key]);
   veil(true, 450);
   await INTRO[intro](s, label, others.map(k => seats[k]));
   V.particles.pts.visible = false;
@@ -789,6 +791,7 @@ async function announce(s, key, index, total, force = {}) {
   spotFocus(key, 900);
   const r = await FLY[fly](s, key);
   if (r !== "landed") await land(s, key, "pop");
+  focusAnnouncement();
   await sleep(500);
   dolly(0, null, 800);
   spotFocus(null, 900);
@@ -854,6 +857,7 @@ async function orbitClassroom() {
 }
 
 async function showFinale() {
+  focusAnnouncement([], true);
   endTension();
   boostGroove(2500, .36);
   veil(false, 300);
