@@ -1052,7 +1052,8 @@ const TRAVEL2 = {
 
   // スポットライト: 暗くなった教室で、ライトが2つの席に止まり、そこへカードが飛ぶ
   async spot(list, cards) {
-    await tween(300, t => setPlateDim(lerp(1, .4, t)), ease.out);
+    const roomLight = V.uniforms.uDim;
+    await tween(300, t => { roomLight.value = lerp(1, .4, t); }, ease.out);
     V.spotLock = [0, 1, 2, 3].map(i => seatW(list[i % list.length].key).setY(0));
     V.spotLockAmt = 0;
     sfx("suspense");
@@ -1062,14 +1063,10 @@ const TRAVEL2 = {
       return sleep(i * 200).then(() => {
         sfx("whoosh");
         return tween(950, t => { g.position.copy(bez(p0, p0.clone().lerp(P, .4).add(v3(0, 2.2, 1)), P, t)); g.scale.setScalar(lerp(s0, 1, t)); }, ease.inOut);
-      }).then(async () => {
-        await landCard(g, s, key);
-        const o = V.seat[key];
-        o.front.material.color.setScalar(.86); o.back.material.color.setScalar(.9);
-      });
+      }).then(() => landCard(g, s, key));
     }));
     await sleep(600);
-    await tween(400, t => { setPlateDim(lerp(.4, 1, t)); V.spotLockAmt = 1 - t; }, ease.inOut);
+    await tween(400, t => { roomLight.value = lerp(.4, 1, t); V.spotLockAmt = 1 - t; }, ease.inOut);
     V.spotLock = null;
   },
 };
@@ -1096,6 +1093,7 @@ async function announcePair(list, force = {}) {
   const labels = list.map((_, i) => pairCount + i + 1 === pairTotal ? "ラスト！" : `${pairCount + i + 1}人目`);
   const cards = list.map(({ s }, i) => { const g = pairCard(s, labels[i], k); g.position.set(xs[i], 0, 0); g.visible = false; return g; });
   try {
+    focusAnnouncement(list.map(({ key }) => key));
     boostGroove(2100, .24);
     veil(true, 400);
     await INTRO2[intro](list, cards, k);
@@ -1108,8 +1106,10 @@ async function announcePair(list, force = {}) {
   } finally {
     // 途中で何かあっても、カメラや照明を元に戻し、全員を着地させる
     cards.forEach(dropCard);
+    focusAnnouncement();
     if (V.camRig) await camHome(400);
     V.spotLock = null; V.spotSpeed = 1; V.spotFocus = 0;
+    V.uniforms.uDim.value = 1;
     for (const { s, key } of list) if (hidden.has(key)) await land(s, key, "pop");
     veil(false, 200);
   }

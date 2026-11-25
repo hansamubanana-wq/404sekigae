@@ -191,13 +191,13 @@ async function frontRowIntro(key) {
   letterbox(true);
   sfx("suspense", { vol: .9 });
   spotFocus(key, 1200);
+  focusAnnouncement([key]);
   dolly(.42, key, 3200);
   const d0 = V.uniforms.uDim.value;
-  tween(1200, t => { V.uniforms.uDim.value = lerp(d0, .5, t); setPlateDim(lerp(1, .55, t)); }, ease.inOut);
+  tween(1200, t => { V.uniforms.uDim.value = lerp(d0, .5, t); }, ease.inOut);
   // 席の名札だけ明るいまま、金の枠が鼓動に合わせて光る
   o.frame.visible = true;
   const unhook = addFrameHook((dt, t) => {
-    o.front.material.color.setScalar(.86); o.back.material.color.setScalar(.95);
     const beat = Math.pow(Math.max(0, Math.sin(t * 5.2)), 12);
     o.pivot.scale.setScalar(1 + beat * .12);
     o.frame.material.color.copy(hdr(HEX.gold, .8 + beat * 2.2));
@@ -223,7 +223,7 @@ async function frontRowIntro(key) {
 /* ---------- 締め (教室に戻る) ---------- */
 async function frontRowOutro(key, at) {
   V.renderHold = false;
-  setPlateDim(1);
+  focusAnnouncement();
   V.uniforms.uDim.value = 1;
   letterbox(true);
   await sleep(250);
@@ -408,7 +408,7 @@ async function announceFrontRow(key, others = [], { finalRound = true } = {}) {
     // 再試行後にスキップを選んだ場合は、既存の結果表示へ
     await frontRowClose(0);
     V.renderHold = false;
-    setPlateDim(1);
+    focusAnnouncement();
     V.uniforms.uDim.value = 1;
     await irisTo(0, 1.05, 500, toScreen(plateLocal(key)) || at, ease.out);
     letterbox(false);
