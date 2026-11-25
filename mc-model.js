@@ -19,10 +19,10 @@ function buildMcModel(mergeGeometries) {
   const detail = (x, y, z, width, height, depth, color) => [
     smallSphere.clone().scale(width, height, depth).translate(x, y, z), color,
   ];
-  const finger = (points, radius, color) => {
+  const finger = (points, radius, color, segments = 6) => {
     const curve = new THREE.CatmullRomCurve3(points.map(point => v3(...point)));
     const tip = points[points.length - 1];
-    return [[new THREE.TubeGeometry(curve, 6, radius, 6), color], detail(...tip, radius, radius, radius, color)];
+    return [[new THREE.TubeGeometry(curve, segments, radius, 6), color], detail(...tip, radius, radius, radius, color)];
   };
   const outline = (points, z, color) => {
     const shape = new THREE.Shape();
@@ -150,6 +150,11 @@ function buildMcModel(mergeGeometries) {
 
   const armLength = .27, forearmLength = .245;
   const thumb = 0xf6ad79;
+  // 袖口の外周から内側の折り返しまで、手首を一周する。
+  const cuff = new THREE.LatheGeometry([
+    [.048,.196],[.063,.196],[.069,.203],[.068,.220],
+    [.061,.242],[.054,.249],[.046,.248],[.045,.241],[.048,.196],
+  ].map(([radius, along]) => new THREE.Vector2(radius, along)), 16);
   const arms = [-1, 1].map(side => {
     const upper = group(body), lower = group(body), palm = group(body);
     pack(upper, [
@@ -159,8 +164,8 @@ function buildMcModel(mergeGeometries) {
     pack(lower, [
       bulb(0,.108,0,.085,.155,.090,navy),
       detail(0,0,0,.080,.080,.083,navy),
-      [new V.RoundedBox(.139,.050,.147,1,.017).translate(0,.215,0),ivory],
-      detail(side*.069,.213,.018,.007,.010,.010,0xc79956),
+      [cuff.clone(),ivory],
+      detail(side*.064,.212,.018,.006,.009,.009,0xc79956),
       detail(0,.244,0,.049,.035,.044,skin),
     ]);
     if (side < 0) return { side, upper, lower, palm };
@@ -183,15 +188,23 @@ function buildMcModel(mergeGeometries) {
     ]);
     return { side, upper, lower, palm, fist, open };
   });
-  // Fingers wrap around the back of the handle. The thumb presses from the front.
-  // The entire grip rotates as one piece, keeping the hand seated on the handle.
+  cuff.dispose();
+
+  // 第1関節から柄の手前を回り、指先は裏へ。親指は裏から柄の上に向けて添える。
   const handleX = .048;
+  const fingers = [[-.043,.015],[-.016,.017],[.013,.018],[.042,.017]].flatMap(([y, width]) => {
+    const clearance = .027 + width;
+    const curve = Array.from({ length: 7 }, (_, i) => {
+      const phase = i / 6;
+      const angle = lerp(191, -69, phase) * Math.PI / 180;
+      return [handleX + clearance * Math.cos(angle), y - .007 * phase, clearance * Math.sin(angle)];
+    });
+    return finger(curve, width, skin, 12);
+  });
   pack(arms[0].palm, [
-    bulb(-.003,.002,0,.030,.062,.048,skin),
-    ...[-.040,-.013,.015,.043].flatMap(y => finger([
-      [-.012,y,-.032],[.035,y,-.041],[.078,y-.003,-.027],[.088,y-.005,.006],
-    ],.013,skin)),
-    ...finger([[-.017,.022,.026],[.015,.043,.044],[.045,.061,.039],[.069,.065,.028]],.017,thumb),
+    bulb(-.013,.001,-.011,.033,.067,.050,skin),
+    ...fingers,
+    ...finger([[-.024,.020,-.024],[.007,.039,-.044],[.040,.054,-.047],[.056,.077,-.045]],.017,thumb),
     [new THREE.CylinderGeometry(.027,.023,.223,12).translate(handleX,.010,0),0x252840],
     [new THREE.CylinderGeometry(.041,.034,.021,12).translate(handleX,.117,0),0x7d89ae],
     bulb(handleX,.150,0,.052,.054,.052,0xbdc4d1),
