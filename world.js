@@ -327,27 +327,32 @@ void main(){
 }
 `;
 
-// 床: 暗いガラスの床、グリッド、スポットライトの光だまり
+// 床: 暗いステージ、両側の光のライン、スポットライトの光だまり
 const FLOOR_FRAG = GLSL_NOISE + `
 uniform float uTime, uDim; uniform vec3 uTint;
 uniform vec3 uSpot[4]; uniform vec3 uSpotCol[4]; uniform vec4 uFocus; uniform vec3 uFocusCol;
 uniform sampler2D uDeskShadows; uniform vec2 uDeskShadowScale;
+uniform float uSideLightX;
 varying vec3 vW;
 void main(){
   vec2 p = vW.xz;
-  vec3 col = vec3(.016,.020,.050);
+  vec3 col = vec3(.012,.015,.042);
   float n = fbm(vec3(p*.16, uTime*.03));
   col += vec3(.05,.02,.10) * smoothstep(.40,.85,n);
-  vec2 q = p / .9;
-  vec2 g = abs(fract(q - .5) - .5) / fwidth(q);
-  float line = 1.0 - min(min(g.x, g.y), 1.0);
-  col += vec3(.10,.17,.40) * line * .30 * exp(-length(p) * .06);
+  float shadow = texture2D(uDeskShadows, p * uDeskShadowScale + .5).r;
+  col *= 1.0 - shadow * .92;
+  vec3 spot = vec3(0.0);
   for (int i = 0; i < 4; i++){
     float d = length(p - uSpot[i].xy);
-    col += uSpotCol[i] * (1.0 - smoothstep(0.0, uSpot[i].z, d)) * .45;
+    spot += uSpotCol[i] * (1.0 - smoothstep(0.0, uSpot[i].z, d)) * .45;
   }
   col += uFocusCol * uFocus.w * (1.0 - smoothstep(0.0, 1.8, length(p - uFocus.xz))) * 1.4;
-  col *= 1.0 - texture2D(uDeskShadows, p * uDeskShadowScale + .5).r;
+  col += spot * (1.0 - shadow * .62);
+  float edge = abs(abs(p.x) - uSideLightX);
+  float line = 1.0 - smoothstep(.015, .015 + fwidth(p.x), edge);
+  float halo = 1.0 - smoothstep(.0, .22, edge);
+  vec3 neon = mix(vec3(.10,.40,1.0), vec3(.63,.12,.88), step(0.0, p.x));
+  col += neon * (line * .42 + halo * .045) * (1.0 - smoothstep(5.6, 9.0, abs(p.y + .6)));
   col *= (1.0 - smoothstep(9.0, 30.0, length(p)));
   gl_FragColor = vec4(col * uDim * uTint, 1.0);
 }
@@ -652,6 +657,7 @@ function buildRoom() {
         uFocusCol: { value: v3(1, .8, .4) },
         uDeskShadows: { value: shadows.texture },
         uDeskShadowScale: { value: shadows.scale },
+        uSideLightX: { value: cols * SX / 2 + .28 },
       },
     }));
   floor.rotation.x = -Math.PI / 2;
@@ -667,20 +673,20 @@ function buildRoom() {
   V.scene.add(wall);
   V.wallFrame = wall.material.uniforms.uWallFrame;
 
-  // 教卓: 木の台 + 金の文字
+  // 教卓: 青紫のステージ台 + 金の文字
   const podium = new THREE.Group();
-  const wood = new THREE.MeshStandardMaterial({ color: 0x6b3f1f, roughness: .45, metalness: .1 });
-  const woodTop = new THREE.MeshStandardMaterial({ color: 0x8a5a2b, roughness: .3, metalness: .15 });
-  const body = new THREE.Mesh(new V.RoundedBox(3.1, .95, 1.0, 4, .08), wood);
+  const podiumBody = new THREE.MeshStandardMaterial({ color: 0x151735, roughness: .42, metalness: .45 });
+  const podiumTop = new THREE.MeshStandardMaterial({ color: 0x293460, roughness: .32, metalness: .35 });
+  const body = new THREE.Mesh(new V.RoundedBox(3.1, .95, 1.0, 4, .08), podiumBody);
   body.position.y = .475;
-  const top = new THREE.Mesh(new V.RoundedBox(3.4, .1, 1.2, 4, .04), woodTop);
+  const top = new THREE.Mesh(new V.RoundedBox(3.4, .1, 1.2, 4, .04), podiumTop);
   top.position.y = 1.0;
   const label = new THREE.Mesh(new THREE.PlaneGeometry(2.4, .6),
     new THREE.MeshBasicMaterial({ map: canvasTex(podiumCanvas()), transparent: true, depthWrite: false, color: hdr(0xffffff, 1.3) }));
   label.position.set(0, 1.55, PODIUM_Z);
   V.podiumSign = label;
   V.scene.add(label);
-  const trim = new THREE.Mesh(new THREE.BoxGeometry(3.12, .03, 1.02), new THREE.MeshBasicMaterial({ color: hdr(HEX.gold, 2.2) }));
+  const trim = new THREE.Mesh(new THREE.BoxGeometry(3.12, .03, 1.02), new THREE.MeshBasicMaterial({ color: hdr(0x49e6f9, 2.2) }));
   trim.position.y = .06;
   podium.add(body, top, trim);
   podium.position.z = PODIUM_Z;
@@ -786,10 +792,14 @@ function buildDesks() {
   });
 }
 
+function deskGlowLight(light) {
+  return lerp(.75, 1, light);
+}
+
 function setDeskStrip(seat, color, intensity = 1) {
   const { strip, color: scratch } = V.deskParts;
   seat.stripColor.copy(color).multiplyScalar(intensity);
-  strip.setColorAt(seat.index, scratch.copy(seat.stripColor).multiplyScalar(seat.light));
+  strip.setColorAt(seat.index, scratch.copy(seat.stripColor).multiplyScalar(deskGlowLight(seat.light)));
   strip.instanceColor.needsUpdate = true;
 }
 
@@ -805,10 +815,10 @@ function seatLook(key) {
   const { glow, color } = V.deskParts;
   setDeskStrip(o, color.set(isHidden ? 0x8fa3ff : HEX[s.gender]), isHidden ? .35 : 2.4);
   o.glowColor.setHex(isHidden ? 0x6070ff : HEX[s.gender]).multiplyScalar(isHidden ? .08 : .32);
-  glow.setColorAt(o.index, color.copy(o.glowColor).multiplyScalar(o.light));
+  glow.setColorAt(o.index, color.copy(o.glowColor).multiplyScalar(deskGlowLight(o.light)));
   glow.instanceColor.needsUpdate = true;
   o.frame.visible = isLocked || isSelected;
-  if (o.frame.visible) o.frame.material.color.setHex(isLocked ? HEX.gold : 0x67e8f9).multiplyScalar(1.25 * o.light);
+  if (o.frame.visible) o.frame.material.color.setHex(isLocked ? HEX.gold : 0x67e8f9).multiplyScalar(1.25 * deskGlowLight(o.light));
   o.lock.visible = isLocked;
 }
 
@@ -1299,7 +1309,7 @@ function frame(now) {
 
 function addFrameHook(f) { (V.onFrame ||= new Set()).add(f); return () => V.onFrame.delete(f); }
 
-// 発表対象以外の机と名札を同じ明るさでフェードさせる。
+// 発表対象以外の机と名札を暗くし、文字とネオンの発光は明るめに保つ。
 function focusAnnouncement(keys = [], immediate = false) {
   const targets = new Set(keys);
   const current = V.announcementTargets;
@@ -1307,7 +1317,7 @@ function focusAnnouncement(keys = [], immediate = false) {
   V.announcementTargets = targets;
   const transition = V.announcementLight = [];
   for (const [key, seat] of Object.entries(V.seat)) {
-    const light = targets.size && !targets.has(key) ? .45 : 1;
+    const light = targets.size && !targets.has(key) ? .55 : 1;
     if (seat.light !== light) transition.push({ seat, from: seat.light, light });
   }
   if (!transition.length) return;
@@ -1316,15 +1326,17 @@ function focusAnnouncement(keys = [], immediate = false) {
     if (V.announcementLight !== transition) return;
     for (const { seat, from, light } of transition) {
       const previous = seat.light;
-      const k = seat.light = lerp(from, light, t);
-      seat.front.material.color.setScalar(PLATE_FRONT_LIGHT * k);
-      seat.back.material.color.setScalar(PLATE_BACK_LIGHT * k);
-      seat.lock.material.color.setScalar(k);
-      seat.frame.material.color.multiplyScalar(k / previous);
+      const k = seat.light = t === 1 ? light : lerp(from, light, t);
+      const nameLight = lerp(.5, 1, k);
+      const glowLight = deskGlowLight(k);
+      seat.front.material.color.setScalar(PLATE_FRONT_LIGHT * nameLight);
+      seat.back.material.color.setScalar(PLATE_BACK_LIGHT * nameLight);
+      seat.lock.material.color.setScalar(nameLight);
+      seat.frame.material.color.multiplyScalar(glowLight / deskGlowLight(previous));
       ped.setColorAt(seat.index, color.setScalar(k));
       top.setColorAt(seat.index, color);
-      strip.setColorAt(seat.index, color.copy(seat.stripColor).multiplyScalar(k));
-      glow.setColorAt(seat.index, color.copy(seat.glowColor).multiplyScalar(k));
+      strip.setColorAt(seat.index, color.copy(seat.stripColor).multiplyScalar(glowLight));
+      glow.setColorAt(seat.index, color.copy(seat.glowColor).multiplyScalar(glowLight));
     }
     ped.instanceColor.needsUpdate = top.instanceColor.needsUpdate = true;
     strip.instanceColor.needsUpdate = glow.instanceColor.needsUpdate = true;
