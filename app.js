@@ -25,6 +25,8 @@ function createSeatPositionsColumnFirst() {
 }
 
 const realSeatPositions = createSeatPositionsColumnFirst();
+// このツールを作った土蔵さんの席と発表順を指定する。
+const CREATOR_STUDENT_NO = 24;
 const seatIndices = new Map(realSeatPositions.map((key, index) => [key, index]));
 const seatNeighbors = realSeatPositions.map(key => {
   const [row, col] = key.split("-").map(Number);
@@ -97,7 +99,18 @@ function shuffleArray(array) {
 const seatMix = buildSeatMix(realSeatPositions, seatNeighbors, seatIndices);
 
 function shuffleSeatStudents(layout, movable) {
-  return chooseSeatMix(layout, movable, realSeatPositions, seatNeighbors, seatMix);
+  const creatorIndex = movable.findIndex(key => layout[key].no === CREATOR_STUDENT_NO);
+  if (creatorIndex < 0) return chooseSeatMix(layout, movable, realSeatPositions, seatNeighbors, seatMix);
+  const creator = layout[movable[creatorIndex]];
+  const rear = movable.filter(key => Number(key.split("-")[0]) >= rows - 2);
+  if (!rear.length) {
+    console.warn("後ろ2列に動かせる席がないため、土蔵さんの席を維持します。");
+    const otherSeats = movable.filter((_, i) => i !== creatorIndex);
+    const result = chooseSeatMix(layout, otherSeats, realSeatPositions, seatNeighbors, seatMix);
+    result.splice(creatorIndex, 0, creator);
+    return result;
+  }
+  return chooseSeatMix(layout, movable, realSeatPositions, seatNeighbors, seatMix, { student: creator, seats: rear });
 }
 
 /* ---------- 保存 / 読み込み ---------- */
@@ -351,9 +364,6 @@ async function swapSeats(key, other) {
 }
 
 /* ---------- 席替え ---------- */
-// このツールを作った土蔵さんの発表順を調整する。
-const CREATOR_STUDENT_NO = 24;
-
 function makeAnnouncementOrder(movable, layout) {
   const order = placeFrontRowLate(shuffleArray(movable));
   const creatorIndex = order.findIndex(key => layout[key].no === CREATOR_STUDENT_NO);
