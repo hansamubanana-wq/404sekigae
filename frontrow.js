@@ -8,7 +8,7 @@
      → 動画 (通常は操作なし。失敗時はタップで音付き再生をやり直せる)
      → 締め (終了画面を少し見せて暗転 → 教室に戻って字幕)
      → 既存の結果表示 (名前カードが席へ)
-   ・発表の順番は、最後の3人の中に入れる
+   ・通常は最後の3人の中に入れる
    ========================================================= */
 
 const FRONT_ROW = {
@@ -359,7 +359,7 @@ function frontRowClose(ms = 0) {
   });
 }
 
-// 残りの3人の名前を並べて見せる (この中の誰かが最前列の中央)
+// 同じ組の候補者を並べて見せる。
 async function showRemaining(items) {
   const n = items.length;
   const k = Math.min(V.heroK * .5, V.visW * .29 / FACE_W);
@@ -383,10 +383,18 @@ async function showRemaining(items) {
   cards.forEach(dropCard);
 }
 
-// 最前列中央の席の発表: 残りの3人を見せる → 前振り → 動画 → 締め → 既存の結果表示 → 残りの2人は短い演出で
-async function announceFrontRow(key, others = []) {
+// 動画の対象者を見せ、最前列中央を動画で発表してから同じ組の残りを発表する。
+async function announceFrontRow(key, others = [], { finalRound = true } = {}) {
   const s = seats[key];
-  await showRemaining(shuffleArray([{ s, key }, ...others]));
+  const group = [{ s, key }, ...others];
+  const preview = shuffleArray(group);
+  const creatorIndex = group.findIndex(item => item.s.no === CREATOR_STUDENT_NO);
+  if (creatorIndex >= 0) {
+    const creator = group[creatorIndex];
+    preview.splice(preview.indexOf(creator), 1);
+    preview.splice(creatorIndex, 0, creator);
+  }
+  await showRemaining(preview);
   const at = await frontRowIntro(key);
   let result = "failed";
   bgmDuck(true);
@@ -407,7 +415,7 @@ async function announceFrontRow(key, others = []) {
     spotFocus(null, 500);
     await dolly(0, null, 500);
   }
-  await announcePair([{ s, key }], { intro: "pop", travel: "dive", frontRowImpact: true });
+  await announcePair([{ s, key }], { intro: "pop", travel: "dive", frontRowImpact: true, frontRowFinalRound: finalRound });
   // 残りの2人は短い演出で一気に
   if (others.length) {
     await announcePair(others, { intro: "pop", travel: "arc", hold: 600 });

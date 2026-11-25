@@ -246,14 +246,14 @@ function buildFrontImpactRings() {
   return rig;
 }
 
-async function frontRowLandingImpact(key) {
+async function frontRowLandingImpact(key, finalRound) {
   const rig = V.frontImpactRings;
   const flash = document.getElementById("frontImpactFlash");
   const { x, z } = seatXZ(key);
   rig.position.set(x, 0, z);
   rig.visible = true;
   flash.hidden = false;
-  bgm("finale");
+  if (finalRound) bgm("finale");
   sfx("boom", { rate: .46, vol: 1.45 });
   sfx("slam", { rate: .62, vol: .7, delay: .065 });
   shake(1.2);
@@ -756,7 +756,7 @@ const TRAVEL2 = {
   },
 
   // カメラ追跡: カードと一緒にカメラも席へ飛び込む (1人ずつ)
-  async dive(list, cards, { frontRowImpact } = {}) {
+  async dive(list, cards, { frontRowImpact, frontRowFinalRound = true } = {}) {
     for (let i = 0; i < cards.length; i++) {
       const g = cards[i], { s, key } = list[i];
       const W = seatW(key), side = W.x > 0 ? -1 : 1;
@@ -784,7 +784,7 @@ const TRAVEL2 = {
       g.rotation.set(0, 0, 0);
       await landCard(g, s, key);
       if (frontRowImpact) {
-        await frontRowLandingImpact(key);
+        await frontRowLandingImpact(key, frontRowFinalRound);
         return;
       }
       shake(.05);
@@ -1119,16 +1119,24 @@ async function announcePair(list, force = {}) {
   await sleep(250);
 }
 
-// 発表の組を作る: 2人ずつ。最前列中央の席があるときは、最後の3人 (最前列中央 + 2人) を1つの組にする
-// 最前列中央がないとき (固定しているとき) は、最後の1人だけ1人で
+// 動画の組には最前列中央と直後の最大2人を入れる。通常の組は2人ずつ。
 function makeRounds(order) {
   const rounds = [];
   if (!order.length) return rounds;
   const fi = order.indexOf(FRONT_ROW.key);
-  const head = fi >= 0 ? order.slice(0, fi) : order.slice(0, -1);
-  const tail = fi >= 0 ? order.slice(fi) : order.slice(-1);
-  for (let i = 0; i < head.length; i += 2) rounds.push(head.slice(i, i + 2));
-  rounds.push(tail);
+  const addPairs = (start, end) => {
+    for (let i = start; i < end; i += 2) rounds.push(order.slice(i, Math.min(end, i + 2)));
+  };
+  if (fi >= 0) {
+    addPairs(0, fi);
+    const videoEnd = Math.min(order.length, fi + FRONT_ROW.fromLast);
+    rounds.push(order.slice(fi, videoEnd));
+    if (videoEnd === order.length) return rounds;
+    addPairs(videoEnd, order.length - 1);
+  } else {
+    addPairs(0, order.length - 1);
+  }
+  rounds.push(order.slice(-1));
   return rounds;
 }
 

@@ -351,6 +351,28 @@ async function swapSeats(key, other) {
 }
 
 /* ---------- 席替え ---------- */
+// このツールを作った土蔵さんの発表順を調整する。
+const CREATOR_STUDENT_NO = 24;
+
+function makeAnnouncementOrder(movable, layout) {
+  const order = placeFrontRowLate(shuffleArray(movable));
+  const creatorIndex = order.findIndex(key => layout[key].no === CREATOR_STUDENT_NO);
+  if (creatorIndex < 0) return order;
+  const creatorSeat = order[creatorIndex];
+  const frontIndex = creatorSeat === FRONT_ROW.key ? -1 : order.indexOf(FRONT_ROW.key);
+  const target = order.length < 10 ? order.length - 1 :
+    pick([8, 9, 10].filter(index => index < order.length && index !== frontIndex));
+  order.splice(creatorIndex, 1);
+  if (frontIndex >= 0) {
+    order.splice(order.indexOf(FRONT_ROW.key), 1);
+    order.splice(target - Number(frontIndex < target), 0, creatorSeat);
+    order.splice(frontIndex, 0, FRONT_ROW.key);
+  } else {
+    order.splice(target, 0, creatorSeat);
+  }
+  return order;
+}
+
 async function shuffleSeats(scope = null) {
   if (busy || !canStartShuffle) return;
   const movable = realSeatPositions.filter(pos => !locked.has(pos) && (!scope || scope.has(pos)));
@@ -381,24 +403,24 @@ async function shuffleSeats(scope = null) {
     beginMcShow();
     await showStart(movable, mc ?? undefined);
     updateStatus();
-    const order = placeFrontRowLate(shuffleArray(movable));   // 最前列中央は最後の3人の中に
-    const rounds = makeRounds(order);                           // 2人ずつの組 (最後は「最前列中央 + 2人」か「最後の1人」)
-    const hasFront = order.includes(FRONT_ROW.key);
+    const order = makeAnnouncementOrder(movable, seats);
+    const rounds = makeRounds(order);
+    const frontAtEnd = rounds.at(-1).includes(FRONT_ROW.key);
     const R = rounds.length;
     resetDecks();
     resetPairDeck(order.length);
     for (let r = 0; r < R; r++) {
       if (R >= 6 && r === Math.floor(R / 2)) await cutHalfway(hidden.size);
-      if (!hasFront && R >= 4 && r === R - 2) await cutTension(hidden.size);
+      if (!frontAtEnd && R >= 4 && r === R - 2) await cutTension(hidden.size);
       const list = rounds[r].map(key => ({ s: seats[key], key }));
       if (r === 0 && mc?.quick) {
         mcTransitionSfx("hit", { vol: .32 });
         shake(.065);
       }
       if (list.some(x => x.key === FRONT_ROW.key)) {
-        // 残り3人: 「ラスト3人…」→ 3人を見せる → 動画で最前列の中央を明かす → 残りの2人
-        if (list.length >= 3) await cutTension(hidden.size);
-        await announceFrontRow(FRONT_ROW.key, list.filter(x => x.key !== FRONT_ROW.key));
+        const finalRound = r === R - 1;
+        if (finalRound && list.length >= 3) await cutTension(hidden.size);
+        await announceFrontRow(FRONT_ROW.key, list.filter(x => x.key !== FRONT_ROW.key), { finalRound });
       } else if (r === R - 1 && R >= 3) {
         letterbox(true);
         await banner(list.length > 1 ? "最後の2人…" : "最後の1人…", 1500, "alert");
