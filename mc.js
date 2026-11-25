@@ -106,6 +106,7 @@ async function loadMcHost() {
     host.reactionMeter = ctx.createAnalyser();
     host.reactionMeter.fftSize = 256;
     host.reactionWave = new Float32Array(host.reactionMeter.fftSize);
+    host.reactionBands = new Uint8Array(host.reactionMeter.frequencyBinCount);
   }
   // 手作り人形の短い脚に合わせ、教卓の左奥から短い歩幅で回り込む。
   host.path = new THREE.CatmullRomCurve3(host.mixer ? [
@@ -164,16 +165,34 @@ function mcFootMark(host, side, at, pace) {
   return { at, position, yaw };
 }
 
-function mcVoiceLevel(meter, wave) {
+function mcVoiceLevel(meter, wave, bands, shape) {
   meter.getFloatTimeDomainData(wave);
   let energy = 0;
   for (const sample of wave) energy += sample * sample;
-  return Math.min(1, Math.sqrt(energy / wave.length) * 6);
+  const level = Math.min(1, Math.sqrt(energy / wave.length) * 6);
+  if (shape && level > .035) {
+    meter.getByteFrequencyData(bands);
+    const binHz = meter.context.sampleRate / meter.fftSize;
+    let low = 0, mid = 0, back = 0, front = 0;
+    for (let i = Math.ceil(230 / binHz); i * binHz < 3150; i++) {
+      const hz = i * binHz;
+      const signal = Math.max(0,bands[i] - 105) ** 2;
+      if (hz < 510) low = Math.max(low,signal);
+      else if (hz < 1030) mid = Math.max(mid,signal);
+      if (hz >= 720 && hz < 1630) back = Math.max(back,signal);
+      else if (hz >= 1630) front = Math.max(front,signal);
+    }
+    // 母音に多い帯域から丸さと開きを近似する。単語の判定はしない。
+    shape[0] = clamp01(.54 + 1.45 * (front - back) / (front + back + 700));
+    shape[1] = clamp01(.62 + 1.25 * (mid - low) / (mid + low + 700));
+  }
+  return level;
 }
 
 function beginMcShow() {
   const host = mcHost;
   if (!host) return;
+  if (host.motion) host.motion.at = null;
   const caption = document.getElementById("mcReaction");
   mcShow = {
     host, caption, text: caption.querySelector(".mc-text"), signVisible: V.podiumSign.visible,
@@ -209,7 +228,7 @@ function updateMcShow(dt, t) {
   const elapsed = reaction ? SND.ctx.currentTime - reaction.start : -1;
   const speaking = elapsed >= 0 && elapsed < reaction.source.buffer.duration;
   if (caption.hidden === speaking) caption.hidden = !speaking;
-  const energy = speaking ? mcVoiceLevel(host.reactionMeter, host.reactionWave) : 0;
+  const energy = speaking ? mcVoiceLevel(host.reactionMeter, host.reactionWave, host.reactionBands, host.voiceShape) : 0;
   mcShow.voiceLevel = lerp(mcShow.voiceLevel, energy, 1 - Math.exp(-32 * dt / TIME_SCALE));
   const gesture = speaking
     ? ease.out(clamp01(elapsed / .14)) * ease.out(clamp01((reaction.source.buffer.duration - elapsed) / .21))
@@ -284,7 +303,7 @@ function endMcShow() {
 }
 
 async function warmUpMc(host) {
-  const expressions = host.mixer ? [] : [host.smile, host.arms[1].open];
+  const expressions = host.mixer ? [] : [host.arms[1].open];
   const visibility = expressions.map(mesh => mesh.visible);
   for (const mesh of expressions) mesh.visible = true;
   V.scene.add(host.actor);
@@ -394,6 +413,8 @@ async function playMcIntro(unlocked) {
   const meter = ctx.createAnalyser();
   meter.fftSize = 256;
   const wave = new Float32Array(meter.fftSize);
+  const bands = new Uint8Array(meter.frequencyBinCount);
+  if (host.motion) host.motion.at = null;
   meter.connect(gain).connect(SND.master);
   let pendingVoices = parts.length;
   const voices = parts.map(part => {
@@ -449,7 +470,7 @@ async function playMcIntro(unlocked) {
     const musicWide = musicTrack ? smoothGroove(musicTime / MC_WIDE_AT) *
       smoothGroove((MC_NEXT_LINE_AT - musicTime) / (MC_NEXT_LINE_AT - MC_PUSH_IN_AT)) : 0;
     const inSpeech = (dialogue >= MC_LINES[0].at && dialogue < host.voice.duration) || musicMic > 0;
-    const speaking = inSpeech ? mcVoiceLevel(meter, wave) : 0;
+    const speaking = inSpeech ? mcVoiceLevel(meter, wave, bands, host.voiceShape) : 0;
     voiceLevel = lerp(voiceLevel, speaking, .47);
     const wide = mcCamera(rig, host.actor, t, dialogue, short, offset, anticipation, musicWide);
     if (host.mixer) {
@@ -458,8 +479,10 @@ async function playMcIntro(unlocked) {
       poseMcSuit(host, t, t, musicHit > .25 ? .7 : gestureTime * 1.2, Math.max(speakingGesture * .55, musicHit));
     } else {
       const angle = Math.atan2(camera.position.x - host.actor.position.x, camera.position.z - host.actor.position.z) - host.actor.rotation.y;
+      const lineAge = t - (cues[nextLine]?.at ?? -Infinity);
+      const phrase = smoothGroove(lineAge / .18) * smoothGroove((.82 - lineAge) / .60);
       poseMc(host, dialogue, Math.min(t, MC_WALK_END), walking, voiceLevel, Math.atan2(Math.sin(angle), Math.cos(angle)),
-        musicHit, musicMic, anticipation, Math.sin(t * 2.8));
+        musicHit, musicMic, anticipation, Math.sin(t * 2.8), t, phrase);
       grooveMc(host, (1 - walking) * (1 - .65 * clamp01(voiceLevel)));
     }
     V.spotFocusAt.copy(host.actor.position);
