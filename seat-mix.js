@@ -73,9 +73,11 @@ function scoreSeatMix(genders, neighbors, seen, queue) {
   return { violations, largest };
 }
 
-function chooseSeatMix(layout, movable, positions, neighbors, mix, reserved) {
+function chooseSeatMix(layout, movable, positions, neighbors, mix, { reserved, boySeat }) {
   const { random, floor } = Math;
   const indices = movable.map(key => mix.indexByKey.get(key));
+  const front = boySeat === undefined ? -1 : mix.indexByKey.get(boySeat);
+  const genderShuffle = front < 0 ? indices : indices.filter(i => i !== front);
   const allowed = reserved?.seats.map(key => mix.indexByKey.get(key));
   const reservedGender = reserved?.student.gender === "boy" ? 1 : 0;
   const open = new Set(indices);
@@ -89,12 +91,17 @@ function chooseSeatMix(layout, movable, positions, neighbors, mix, reserved) {
     const boy = student.gender === "boy";
     genders[i] = boy ? 1 : 0;
     numBoys += genders[i];
-    if (!open.has(i)) {
+    if (!open.has(i) || i === front) {
       const { half, bit } = mix.cells[i];
       fixed[half] |= bit;
-      if (boy) fixedBoys[half] |= bit;
+      if (boy || i === front) fixedBoys[half] |= bit;
     }
   });
+  // Keep the front seat eligible for any boy while fixing its gender in every proposal.
+  if (front >= 0 && !genders[front]) {
+    genders[genderShuffle.find(i => genders[i])] = 0;
+    genders[front] = 1;
+  }
   const options = mix.halves.map(({ byCount }, half) =>
     fixed[half] ? byCount.map(bucket => bucket.filter(mask => (mask & fixed[half]) === fixedBoys[half])) : byCount);
   const choices = [];
@@ -107,7 +114,7 @@ function chooseSeatMix(layout, movable, positions, neighbors, mix, reserved) {
   }
 
   let best, bestScore = Infinity, bestResult, bestReserved = -1, accepted = false;
-  const bothGenders = indices.some(i => genders[i] !== genders[indices[0]]);
+  const bothGenders = genderShuffle.some(i => genders[i] !== genders[genderShuffle[0]]);
   const budget = bothGenders ? SEAT_SHUFFLE_LIMIT : 1;
   for (let step = 0; step < budget; step++) {
     // During the last quarter, include unrestricted proposals so the fallback
@@ -121,8 +128,8 @@ function chooseSeatMix(layout, movable, positions, neighbors, mix, reserved) {
         genders[i] = ((half ? last : first) & bit) ? 1 : 0;
       }
     } else if (bothGenders) {
-      for (let i = indices.length - 1; i > 0; i--) {
-        const a = indices[i], b = indices[floor(random() * (i + 1))];
+      for (let i = genderShuffle.length - 1; i > 0; i--) {
+        const a = genderShuffle[i], b = genderShuffle[floor(random() * (i + 1))];
         const gender = genders[a];
         genders[a] = genders[b];
         genders[b] = gender;
@@ -133,7 +140,7 @@ function chooseSeatMix(layout, movable, positions, neighbors, mix, reserved) {
     if (seat >= 0 && genders[seat] !== reservedGender) {
       if (step < budget - 1 || best) continue;
       // Guarantee a rear seat even if every sampled layout lacked a matching draw.
-      const swap = indices.find(i => genders[i] === reservedGender);
+      const swap = genderShuffle.find(i => genders[i] === reservedGender);
       genders[swap] = genders[seat];
       genders[seat] = reservedGender;
     }
