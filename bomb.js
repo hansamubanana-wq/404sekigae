@@ -4,7 +4,8 @@
    ・赤い筒の束 + 黒いテープ + 基板 + 赤い数字のタイマー + 小さな液晶 + 赤と青の線
    ・席替えが始まると動き出し、最前列中央の動画が始まる瞬間にちょうど 00:22 になる
      (残り時間は発表の進み具合から見積もり直し、前振りの直前でぴったり合わせる)
-   ・動画のあとは 00:01 で止まり、液晶が白く光ったまま残る
+   ・最前列中央が空席の間だけ机に置き、はてなの名札は出さない。人が入ったら消える
+   ・動画のあとは 00:01 で止まり、液晶が白く光る
    ・演出の字幕などでは触れない (さりげなく映り込むだけ)
    ========================================================= */
 
@@ -22,9 +23,9 @@ const BOMB = {
 function buildBomb() {
   const { x, z } = seatXZ(BOMB.key);
   const g = new THREE.Group();
-  // 名札のカメラ側、机の天板の手前の端に寝かせて置く (斜め上から見下ろすカメラに液晶が向くよう後ろへ傾ける)
-  g.position.set(x, .5, z + .56);
-  g.rotation.x = -.95;
+  // 空席の間は名札 (はてな) を消して、机の天板の真ん中に置く。斜め上のカメラにタイマーが向くよう後ろへ傾ける
+  g.position.set(x, .66, z + .1);
+  g.rotation.x = -.6;
   const red = new THREE.MeshStandardMaterial({ color: 0xb4261d, roughness: .55, emissive: 0x3a0806 });
   const cap = new THREE.MeshStandardMaterial({ color: 0xd9c9a8, roughness: .8, emissive: 0x1a140c });
   const tape = new THREE.MeshStandardMaterial({ color: 0x0c0c0e, roughness: .45 });
@@ -66,7 +67,8 @@ function buildBomb() {
   wire(0x2563eb, [[-.06, .07, .09], [-.04, .0, .15], [.1, -.02, .14], [.27, .0, .08], [.31, .02, .03]]);
   wire(0xe0261b, [[.2, .22, .07], [.27, .2, .04], [.3, .1, .0]]);
   wire(0x2563eb, [[-.2, .22, .07], [-.27, .19, .04], [-.31, .09, .0]]);
-  g.scale.setScalar(1.75);
+  g.scale.setScalar(2.3);
+  g.visible = false;
   V.scene.add(g);
   BOMB.group = g; BOMB.cv = cv; BOMB.ctx = cv.getContext("2d"); BOMB.tex = tex; BOMB.lcd = lcd; BOMB.led = led;
   bombDraw("--:--");
@@ -110,6 +112,12 @@ function bombFormat(sec) {
 
 function bombTick() {
   if (!BOMB.group) return;
+  // 最前列中央が空席 (発表前) の間だけ装置を出し、名札は隠す。人が入ったら装置を消して名札を戻す
+  const empty = hidden.has(BOMB.key);
+  if (BOMB.group.visible !== empty) {
+    BOMB.group.visible = empty;
+    V.seat[BOMB.key].pivot.visible = !empty;
+  }
   const now = performance.now();
   if (BOMB.state === "run") {
     const left = Math.max(0, BOMB.target - now);
@@ -124,7 +132,6 @@ function bombTick() {
 // 席替えを始めたとき。frontRound: 最前列中央が出る組の番号 (出ない回は -1)
 function bombArm(frontRound) {
   if (!BOMB.group) return;
-  BOMB.group.visible = frontRound >= 0;
   BOMB.lcd.material.color.setHex(0x1a2420);
   BOMB.frontRound = frontRound;
   BOMB.roundStart = [];
