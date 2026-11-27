@@ -128,12 +128,7 @@ function drawFace(ctx, W, H, s, o = {}) {
   ctx.fillStyle = "#ffffff";
   const name = o.name ?? s.name;
   const x = W / 2 - fullW / 2, y = H * (o.label ? .66 : .64);
-  if (o.badge) {
-    ctx.lineJoin = "round";
-    ctx.lineWidth = H * .025;
-    ctx.strokeStyle = "#080b20";
-    ctx.strokeText(name, x, y);
-  } else if (!o.textOnly) {
+  if (!o.textOnly) {   // 名前は性別の色でふんわり光らせる
     ctx.shadowColor = col;
     ctx.shadowBlur = H * .06;
   }
