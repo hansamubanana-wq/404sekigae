@@ -4,7 +4,7 @@
 const CACHE = "sekigae-v45";
 // 音声はアプリが必要なタイミングで読み込むので、事前キャッシュには含めない。
 const CORE = [
-  "./", "index.html", "style.css", "students.js", "seat-mix.js", "sound.js", "app.js", "world.js", "models.js", "mc-model.js", "mc-suit.js", "mc.js", "groove.js", "extras.js", "bomb.js", "frontrow.js", "pair.js", "show.js",
+  "./", "index.html", "style.css", "students.js", "seat-mix.js", "sound.js", "app.js", "stage-arch.js", "finale-fx.js", "world.js", "models.js", "mc-model.js", "mc-suit.js", "mc.js", "groove.js", "extras.js", "bomb.js", "frontrow.js", "pair.js", "show.js",
   "sounds/_list.json", "manifest.webmanifest", "icons/favicon.ico", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png",
 ];
 
