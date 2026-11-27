@@ -460,12 +460,14 @@ async function announceFrontRow(key, others = [], { finalRound = true } = {}) {
     preview.splice(preview.indexOf(creator), 1);
     preview.splice(creatorIndex, 0, creator);
   }
+  bombApproach(preview.length * 320 + 3600 + BOMB.introMs);
   await showRemaining(preview);
+  bombApproach(BOMB.introMs);
   const at = await frontRowIntro(key);
   let result = "failed";
   bgmDuck(true);
   try { result = await playFrontRow(s); } catch (error) { frontRowReport("動画の準備に失敗", error); }
-  finally { bgmDuck(false); }
+  finally { bgmDuck(false); bombDefuse(); }
   if (result === "done") {
     await sleep(FRONT_ROW.endHold);   // 名前の出た終了画面を少し見せる
     await frontRowClose(1200);        // ゆっくり暗転
