@@ -460,8 +460,10 @@ async function announceFrontRow(key, others = [], { finalRound = true } = {}) {
     preview.splice(preview.indexOf(creator), 1);
     preview.splice(creatorIndex, 0, creator);
   }
-  bombApproach(preview.length * 320 + 3600 + BOMB.introMs);
+  bombApproach(preview.length * 320 + 3520 + BOMB.introMs);   // 候補の提示は実測 3人で約4.5秒
+  BOMB.cover = true;   // 候補カードで画面が隠れている間は、タイマーを大きく合わせてよい
   await showRemaining(preview);
+  BOMB.cover = false;
   bombApproach(BOMB.introMs);
   const at = await frontRowIntro(key);
   let result = "failed";
