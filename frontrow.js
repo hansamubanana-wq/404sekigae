@@ -464,6 +464,7 @@ async function announceFrontRow(key, others = [], { finalRound = true } = {}) {
   BOMB.cover = true;   // 候補カードで画面が隠れている間は、タイマーを大きく合わせてよい
   await showRemaining(preview);
   BOMB.cover = false;
+  BOMB.beepOK = true;   // ここから動画までだけ、装置の電子音を鳴らす
   bombApproach(BOMB.introMs);
   const at = await frontRowIntro(key);
   let result = "failed";
