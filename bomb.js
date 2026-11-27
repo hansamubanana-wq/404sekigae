@@ -3,7 +3,8 @@
    最前列中央の机に仕掛けた装置 (動画の爆弾と同じ見た目)
    ・赤い筒の束 + 黒いテープ + 基板 + 赤い数字のタイマー + 小さな液晶 + 赤と青の線
    ・席替えが始まると動き出し、最前列中央の動画が始まる瞬間にちょうど 00:22 になる
-     (残り時間は発表の進み具合から見積もり直し、前振りの直前でぴったり合わせる)
+     (残り時間は発表の進み具合から見積もり直す。数字は飛ばさず、読める大きさで映っている間は
+      ほぼ1秒ずつ、映っていない・小さいときだけ速さを変えて見積もりに寄せる)
    ・最前列中央が空席の間だけ机に置き、はてなの名札は出さない。人が入ったら消える
    ・動画のあとは 00:01 で止まり、液晶が白く光る
    ・演出の字幕などでは触れない (さりげなく映り込むだけ)
@@ -12,9 +13,9 @@
 const BOMB = {
   key: `0-${(cols - 1) / 2}`,
   videoAt: 22,              // 動画の開始時点で表示する秒数
-  roundMs: 9000,            // 1組の発表にかかる時間の初めの見積もり (ミリ秒)
+  roundMs: 7400,            // 1組の発表にかかる時間の初めの見積もり (ミリ秒。実測の平均)
   tailMs: 8800,             // 最前列中央の組が始まってから動画が始まるまで (候補提示 + 前振り)
-  introMs: 4550,            // 前振りの開始から動画が始まるまで
+  introMs: 4850,            // 前振りの開始から動画が始まるまで (実測 4.8秒 + 再生開始の待ち)
   state: "idle",            // idle | run | done
   target: 0,                // 動画が始まる予定の時刻 (performance.now)
   shown: "",
@@ -51,6 +52,7 @@ function buildBomb() {
   const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
   const disp = new THREE.Mesh(new THREE.PlaneGeometry(.25, .09), new THREE.MeshBasicMaterial({ map: tex, toneMapped: false }));
   disp.position.set(-.04, .185, .085); g.add(disp);
+  BOMB.disp = disp;
   // 小さな液晶 (動画のあとは白く光る)
   const lcd = new THREE.Mesh(new THREE.PlaneGeometry(.085, .06), new THREE.MeshBasicMaterial({ color: 0x1a2420, toneMapped: false }));
   lcd.position.set(.14, .185, .085); g.add(lcd);
@@ -70,6 +72,15 @@ function buildBomb() {
   g.scale.setScalar(2.3);
   g.visible = false;
   V.scene.add(g);
+  // 爆発の火の玉 (外側の炎と内側の白い芯)
+  const ball = new THREE.Group();
+  const fireMat = c => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
+  const outer = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), fireMat(0xff5a14));
+  const inner = new THREE.Mesh(new THREE.SphereGeometry(.55, 20, 14), fireMat(0xfff0b0));
+  ball.add(outer, inner);
+  ball.visible = false;
+  V.scene.add(ball);
+  BOMB.fire = { ball, outer, inner };
   BOMB.group = g; BOMB.cv = cv; BOMB.ctx = cv.getContext("2d"); BOMB.tex = tex; BOMB.lcd = lcd; BOMB.led = led;
   bombDraw("--:--");
   addFrameHook(bombTick);
@@ -110,18 +121,40 @@ function bombFormat(sec) {
   return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 }
 
+// タイマーの数字が画面で何ピクセルの高さに見えているか (画面外なら 0)
+function bombScreenHeight() {
+  if (!BOMB.disp || !V.camera) return 0;
+  const a = BOMB.disp.localToWorld(v3(0, .045, 0)).project(V.camera);
+  const b = BOMB.disp.localToWorld(v3(0, -.045, 0)).project(V.camera);
+  const inView = p => p.z < 1 && Math.abs(p.x) < 1.05 && Math.abs(p.y) < 1.05;
+  if (!inView(a) && !inView(b)) return 0;
+  return Math.abs(a.y - b.y) / 2 * innerHeight;
+}
+
 function bombTick() {
   if (!BOMB.group) return;
   // 最前列中央が空席 (発表前) の間だけ装置を出し、名札は隠す。人が入ったら装置を消して名札を戻す
   const empty = hidden.has(BOMB.key);
-  if (BOMB.group.visible !== empty) {
-    BOMB.group.visible = empty;
-    V.seat[BOMB.key].pivot.visible = !empty;
-  }
+  const show = empty && !BOMB.blown;
+  if (BOMB.group.visible !== show) BOMB.group.visible = show;
+  const pivot = V.seat[BOMB.key].pivot;
+  if (pivot.visible === empty) pivot.visible = !empty;
   const now = performance.now();
+  const dt = Math.min(.25, (now - (BOMB.last || now)) / 1000);
+  BOMB.last = now;
   if (BOMB.state === "run") {
-    const left = Math.max(0, BOMB.target - now);
-    bombDraw(bombFormat(BOMB.videoAt + Math.ceil(left / 1000)));
+    // 表示している残り秒 (left) は飛ばさず、速さだけを変えて見積もり (goal) に寄せる。
+    // 数字が読める大きさで映っている間はほとんど1秒ずつ (±12%)、映っていない・小さいときだけ大きく寄せる
+    const goal = Math.max(0, (BOMB.target - now) / 1000);
+    const err = BOMB.left - goal;
+    // 数字の見える大きさで、速さを変えてよい幅を決める (大きく映るほど1秒ちょうどに近づける)
+    const h = BOMB.group.visible ? bombScreenHeight() : 0;
+    const lim = (BOMB.cover || h < 9) ? null : h < 20 ? .2 : .08;
+    const rate = lim
+      ? 1 + Math.max(-lim, Math.min(lim, err / Math.max(goal, 3)))
+      : 1 + Math.max(-.9, Math.min(3, err / 1.2));
+    BOMB.left = Math.max(0, BOMB.left - rate * dt);
+    bombDraw(bombFormat(BOMB.videoAt + Math.ceil(BOMB.left - 1e-6)));
     BOMB.led.visible = (now % 1000) < 140;
   } else {
     BOMB.led.visible = false;
@@ -134,10 +167,13 @@ function bombArm(frontRound) {
   if (!BOMB.group) return;
   BOMB.lcd.material.color.setHex(0x1a2420);
   BOMB.frontRound = frontRound;
+  BOMB.blown = false;
+  BOMB.cover = false;
   BOMB.roundStart = [];
   if (frontRound < 0) { BOMB.state = "idle"; bombDraw("--:--"); return; }
   BOMB.state = "run";
   BOMB.target = performance.now() + frontRound * BOMB.roundMs + BOMB.tailMs;
+  BOMB.left = (BOMB.target - performance.now()) / 1000;
 }
 // 各組の発表を始めるとき。これまでの平均から残りを見積もり直す
 function bombRound(r) {
@@ -156,4 +192,37 @@ function bombDefuse() {
   BOMB.state = "done";
   bombDraw("00:01");
   BOMB.lcd.material.color.setRGB(1.6, 1.7, 1.65);
+}
+
+// 最前列中央の名前カードが装置にぶつかった瞬間: 装置を消して爆発させる
+function bombExplode() {
+  if (!BOMB.group || BOMB.blown) return;
+  const at = V.stage.worldToLocal(BOMB.group.getWorldPosition(v3()));
+  BOMB.blown = true;
+  BOMB.group.visible = false;
+  sfx("boom", { rate: .85, vol: 1.7 });
+  sfx("boom", { rate: .6, vol: 1.2, delay: .08 });
+  shake(1.6);
+  flashAt(at, hdr(0xff7a2a, 5), 7);
+  // 火の玉がふくらんで消える
+  const { ball, outer, inner } = BOMB.fire;
+  ball.position.copy(BOMB.group.getWorldPosition(v3())).add(v3(0, .35, 0));
+  ball.visible = true;
+  tween(900, t => {
+    const e = 1 - (1 - t) ** 3;
+    ball.scale.setScalar(.25 + 2.6 * e);
+    outer.material.opacity = 1.1 * (1 - t) ** 1.4;
+    outer.material.color.setRGB(1.6, .55 - .3 * t, .12);
+    inner.material.opacity = 1.3 * (1 - t) ** 3;
+  }, ease.linear).then(() => { ball.visible = false; });
+  // 画面全体のフラッシュをオレンジに
+  const flash = document.getElementById("frontImpactFlash");
+  if (flash) {
+    flash.style.background = "radial-gradient(circle at 50% 55%, #fff4c8 0%, #ff8a2a 38%, #b32400 75%, #3a0800 100%)";
+    setTimeout(() => { flash.style.background = ""; }, 900);
+  }
+  burst(at, [hdr(0xff4a12, 4.2), hdr(0xff9a2e, 4), hdr(0xffe2a0, 3.6)], 320, 7.5,
+    { life: 1.1, size: .11, grav: .8, up: 1.1 });
+  burst(at, [hdr(0xffd27a, 2.2), hdr(0xff6a1a, 1.6)], 140, 2.4,
+    { life: 2.2, size: .16, grav: -.35, up: 1.6 });
 }

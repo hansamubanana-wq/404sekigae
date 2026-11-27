@@ -782,6 +782,7 @@ const TRAVEL2 = {
         }, approach),
       ]);
       g.rotation.set(0, 0, 0);
+      if (frontRowImpact) bombExplode();   // 名前カードが装置にぶつかった瞬間に爆発
       await landCard(g, s, key);
       if (frontRowImpact) {
         await frontRowLandingImpact(key, frontRowFinalRound);
