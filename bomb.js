@@ -154,7 +154,10 @@ function bombTick() {
       ? 1 + Math.max(-lim, Math.min(lim, err / Math.max(goal, 3)))
       : 1 + Math.max(-.9, Math.min(3, err / 1.2));
     BOMB.left = Math.max(0, BOMB.left - rate * dt);
-    bombDraw(bombFormat(BOMB.videoAt + Math.ceil(BOMB.left - 1e-6)));
+    const text = bombFormat(BOMB.videoAt + Math.ceil(BOMB.left - 1e-6));
+    // カメラが近くに寄って数字が大きく映っているときだけ、1秒ごとに小さな電子音
+    if (text !== BOMB.shown && h > 16) bombBeep(Math.min(1, (h - 16) / 10));
+    bombDraw(text);
     BOMB.led.visible = (now % 1000) < 140;
   } else {
     BOMB.led.visible = false;
@@ -225,4 +228,19 @@ function bombExplode() {
     { life: 1.1, size: .11, grav: .8, up: 1.1 });
   burst(at, [hdr(0xffd27a, 2.2), hdr(0xff6a1a, 1.6)], 140, 2.4,
     { life: 2.2, size: .16, grav: -.35, up: 1.6 });
+}
+
+// タイマーの電子音 (短いピッ)。大きさ k: 0〜1
+function bombBeep(k) {
+  const ctx = SND.ctx;
+  if (!ctx || !SND.master || ctx.state !== "running" || k <= 0) return;
+  const t = ctx.currentTime, o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = "square";
+  o.frequency.value = 2350;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(.05 * k, t + .004);
+  g.gain.setValueAtTime(.05 * k, t + .055);
+  g.gain.linearRampToValueAtTime(0, t + .075);
+  o.connect(g).connect(SND.master);
+  o.start(t); o.stop(t + .09);
 }
