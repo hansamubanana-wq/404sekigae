@@ -424,10 +424,12 @@ async function shuffleSeats(scope = null) {
     const order = makeAnnouncementOrder(movable, seats);
     const rounds = makeRounds(order);
     const frontAtEnd = rounds.at(-1).includes(FRONT_ROW.key);
+    bombArm(rounds.findIndex(round => round.includes(FRONT_ROW.key)));
     const R = rounds.length;
     resetDecks();
     resetPairDeck(order.length);
     for (let r = 0; r < R; r++) {
+      bombRound(r);
       if (R >= 6 && r === Math.floor(R / 2)) await cutHalfway(hidden.size);
       if (!frontAtEnd && R >= 4 && r === R - 2) await cutTension(hidden.size);
       const list = rounds[r].map(key => ({ s: seats[key], key }));

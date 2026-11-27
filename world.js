@@ -575,6 +575,7 @@ async function initWorld(beforeNames) {
   buildRoom();
   buildSpots();
   buildDesks();
+  buildBomb();
   buildStage();
 
   V.camOffset = v3();
