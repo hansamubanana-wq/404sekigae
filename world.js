@@ -752,7 +752,11 @@ function buildRoom() {
   V.scene.add(label);
   const trim = new THREE.Mesh(new THREE.BoxGeometry(3.12, .03, 1.02), new THREE.MeshBasicMaterial({ color: hdr(0x49e6f9, 2.2) }));
   trim.position.y = .06;
-  podium.add(body, top, trim);
+  // 教卓は DJ ブース (正面の LED パネルに「教卓」の文字があるので、浮いている札は出さない)
+  V.djBooth = createDjBooth(THREE);
+  V.djColor = new THREE.Color();
+  podium.add(V.djBooth.object);
+  label.visible = false;
   podium.position.z = PODIUM_Z;
   // 教卓をまたぐネオンのアーチ (拍に合わせて光る) と、全員決定の演出
   V.arch = createStageArch(THREE, { z: PODIUM_Z - .9, width: 7.4, height: 3.3 });
@@ -1408,6 +1412,9 @@ function frame(now) {
   updateMirrors();
   V.arch.setBeat(lead.phase, beatOn * groove.power);
   V.arch.update(dt, t);
+  V.djBooth.setBeat(lead.phase, beatOn * groove.power);
+  if (beatOn > .01) V.djBooth.setColor(V.djColor.setRGB(fu.uWaveCol.value.x, fu.uWaveCol.value.y, fu.uWaveCol.value.z));
+  V.djBooth.update(dt, t);
   V.finaleFx.update(dt, t);
   // 名札がふわふわ浮く
   for (const key in V.seat) {
