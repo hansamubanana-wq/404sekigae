@@ -1,8 +1,9 @@
 "use strict";
 /* =========================================================
    最前列中央の席の特別演出
-   完成動画 media/the_front_row.mp4 (約33.1秒 / 1280×720 / 24fps) を流し、
-   31.6秒から机の上の白紙の中央に当選者の名前を重ねて、終了画面まで残す。
+   完成動画 media/the_front_row.mp4 (爆弾処理・約43.3秒 / 1280×720 / 24fps・日本語字幕入り) を流す。
+   最後の白い画面 (37.5秒から止め絵) に、画面の傾きに合わせて 3・2・1 を映し、
+   2秒の間 (心音) をおいて当選者の名前を映す。終了画面まで残す。
    流れ:
      前振り (黒帯・照明が落ちて席にライトとカメラが寄る・字幕・丸く暗転)
      → 動画 (通常は操作なし。失敗時はタップで音付き再生をやり直せる)
@@ -13,10 +14,14 @@
 
 const FRONT_ROW = {
   key: `0-${(cols - 1) / 2}`,  // 最前列 (教卓側の1列目) の中央の席
-  src: "media/the_front_row.mp4?v=12",  // 動画を差し替えたら v を上げる
-  nameAt: 31.6,               // カフェ16秒 + 暗転6.5秒 + 教室で紙に名前を出すまでの9.1秒
-  x: .500, y: .525,           // 白紙の中心 (映像の矩形に対する割合)
-  maxW: .36,                  // 名前の最大幅 (映像の幅に対する割合)
+  src: "media/the_front_row.mp4?v=14",  // 動画を差し替えたら v を上げる
+  countAt: 37.55,             // 3・2・1 を出し始める時刻 (動画の電子音と同じ)
+  nameAt: 42.55,              // 1 のあと2秒おいて名前 (動画のノイズ音と同じ)
+  // 白い画面の四隅 (映像の矩形に対する割合。左上・右上・右下・左下)
+  quad: [[.2758, .2806], [.7016, .2528], [.7172, .7111], [.2914, .7653]],
+  nameSize: 210,              // 名前の文字の大きさ (画面を 1000×615 としたとき)
+  maxW: 860,                  // 名前の最大幅 (同上)
+  scramble: .7,               // 名前が乱れた文字から定まるまでの秒数
   fromLast: 3,                // 発表の順番: 最後の3人の中に入れる (残り3人を見せてから動画)
   waitTimeout: 25000,         // 再生開始やバッファ待ちが長引いたら、再生ボタンを出す (ミリ秒)
   endHold: 2600,              // 動画が終わったあと、終了画面を見せておく時間 (ミリ秒)
@@ -33,7 +38,7 @@ function frontRowDom() {
   root.hidden = true;
   root.innerHTML = `
     <video class="fr-video" playsinline webkit-playsinline preload="none" disablepictureinpicture disableremoteplayback></video>
-    <div class="fr-name" aria-live="polite"></div>
+    <div class="fr-screen"><div class="fr-count"></div><div class="fr-name" aria-live="polite"></div></div>
     <div class="fr-panel" hidden>
       <p class="fr-status" role="status"></p>
       <button type="button" class="fr-retry" hidden>タップで再生</button>
@@ -45,6 +50,7 @@ function frontRowDom() {
   document.body.append(root, iris);
   FR = {
     root, iris, video: root.querySelector(".fr-video"), name: root.querySelector(".fr-name"),
+    screen: root.querySelector(".fr-screen"), count: root.querySelector(".fr-count"), fullName: "", shown: "",
     panel: root.querySelector(".fr-panel"), status: root.querySelector(".fr-status"),
     retry: root.querySelector(".fr-retry"), skip: root.querySelector(".fr-skip"), active: false,
   };
@@ -90,6 +96,11 @@ function frontRowPreload() {
 
 // iPad が preload を抑える場合も、動画のデータ自体は発表前に端末へ置く。
 async function frontRowPrepare() {
+  // 白い画面に映す文字の字体 (DotGothic16) を先に読み込んでおく
+  try {
+    const chars = "0123456789" + studentsOriginal.map(x => x.name ?? x).join("");
+    document.fonts?.load('100px "DotGothic16"', chars).catch(() => {});
+  } catch {}
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FRONT_ROW.waitTimeout);
   try {
@@ -153,23 +164,71 @@ function frontRowRect() {
   return { left: box.left + (box.width - w) / 2, top: box.top + (box.height - h) / 2, width: w, height: h };
 }
 
-// 名前を白紙の中心に置き、幅が映像の 40% に収まるよう文字の大きさを合わせる
-function frontRowLayoutName() {
-  const r = frontRowRect(), el = FR.name;
-  el.style.left = `${r.left + r.width * FRONT_ROW.x}px`;
-  el.style.top = `${r.top + r.height * FRONT_ROW.y}px`;
-  let fs = r.height * .1;
-  el.style.fontSize = `${fs}px`;
-  const maxW = r.width * FRONT_ROW.maxW;
-  const w = el.scrollWidth;
-  if (w > maxW) { fs *= maxW / w; el.style.fontSize = `${fs}px`; }
-  el.style.maxWidth = `${maxW}px`;
+// 長方形 (0,0)-(w,h) を四隅 q へ写す matrix3d (射影変換)
+function frontRowMatrix(w, h, q) {
+  const adj = m => [m[4] * m[8] - m[5] * m[7], m[2] * m[7] - m[1] * m[8], m[1] * m[5] - m[2] * m[4],
+    m[5] * m[6] - m[3] * m[8], m[0] * m[8] - m[2] * m[6], m[2] * m[3] - m[0] * m[5],
+    m[3] * m[7] - m[4] * m[6], m[1] * m[6] - m[0] * m[7], m[0] * m[4] - m[1] * m[3]];
+  const mul = (a, b) => {
+    const c = Array(9);
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+      let v = 0;
+      for (let k = 0; k < 3; k++) v += a[3 * i + k] * b[3 * k + j];
+      c[3 * i + j] = v;
+    }
+    return c;
+  };
+  const mulv = (m, v) => [0, 1, 2].map(i => m[3 * i] * v[0] + m[3 * i + 1] * v[1] + m[3 * i + 2] * v[2]);
+  const basis = p => {
+    const m = [p[0][0], p[1][0], p[2][0], p[0][1], p[1][1], p[2][1], 1, 1, 1];
+    const v = mulv(adj(m), [p[3][0], p[3][1], 1]);
+    return mul(m, [v[0], 0, 0, 0, v[1], 0, 0, 0, v[2]]);
+  };
+  const t = mul(basis(q), adj(basis([[0, 0], [w, 0], [w, h], [0, h]])));
+  const n = t.map(x => x / t[8]);
+  return `matrix3d(${[n[0], n[3], 0, n[6], n[1], n[4], 0, n[7], 0, 0, 1, 0, n[2], n[5], 0, 1].join(",")})`;
 }
 
-// 再生位置から名前の表示を決める
+// 白い画面の傾きに合わせて 3・2・1 と名前の板を置き、名前が幅に収まる大きさを決める
+function frontRowLayoutName() {
+  const r = frontRowRect(), { screen, name } = FR;
+  const q = FRONT_ROW.quad.map(([x, y]) => [r.left + r.width * x, r.top + r.height * y]);
+  screen.style.transform = frontRowMatrix(1000, 615, q);
+  name.textContent = FR.fullName;
+  let fs = FRONT_ROW.nameSize;
+  name.style.fontSize = `${fs}px`;
+  const w = name.scrollWidth;
+  if (w > FRONT_ROW.maxW) { fs *= FRONT_ROW.maxW / w; name.style.fontSize = `${fs}px`; }
+  name.textContent = FR.shown;
+}
+
+// 名前が出た直後は、まだ決まっていない文字を乱れた記号にする
+const FR_NOISE = "■□▲◆＃＊％＆＠？！0123456789アイウエオカキクケコサシスセソ";
+function frontRowNameText(dt) {
+  const full = [...FR.fullName], k = FRONT_ROW.scramble;
+  if (dt >= k) return FR.fullName;
+  const fixed = Math.floor(full.length * Math.max(0, dt - .15) / (k - .15));
+  return full.map((ch, i) => (i < fixed || ch === " " || ch === "　") ? ch
+    : FR_NOISE[Math.floor(Math.random() * FR_NOISE.length)]).join("");
+}
+
+// 再生位置から 3・2・1 と名前の表示を決める
 function frontRowSync(t) {
   if (!FR) return;
-  FR.name.classList.toggle("on", t >= FRONT_ROW.nameAt - .001);
+  const { count, name, screen } = FR;
+  const c = t - FRONT_ROW.countAt;
+  const digit = (c >= 0 && c < 3) ? String(3 - Math.floor(c)) : "";
+  if (count.textContent !== digit) {
+    count.textContent = digit;
+    count.classList.remove("on");
+    if (digit) { void count.offsetWidth; count.classList.add("on"); }
+  }
+  const dt = t - FRONT_ROW.nameAt;
+  const on = dt >= -.001;
+  name.classList.toggle("on", on);
+  const text = on ? frontRowNameText(dt) : "";
+  if (text !== FR.shown) { FR.shown = text; name.textContent = text; }
+  screen.classList.toggle("lit", !!digit || on);
 }
 
 /* ---------- 丸くすぼまる暗転 (アイリス) ---------- */
@@ -303,8 +362,12 @@ function playFrontRow(student) {
     };
 
     d.active = true;
-    d.name.textContent = student.name;
+    d.fullName = student.name;
+    d.shown = "";
+    d.name.textContent = "";
     d.name.classList.remove("on");
+    d.count.textContent = "";
+    d.count.classList.remove("on");
     d.root.classList.remove("on", "out");
     d.root.hidden = false;
     V.renderHold = true;   // 裏の3Dを止めて動画を滑らかに
@@ -356,6 +419,9 @@ function frontRowClose(ms = 0) {
     d.root.hidden = true;
     d.root.classList.remove("on", "out");
     d.name.classList.remove("on");
+    d.count.textContent = "";
+    d.count.classList.remove("on");
+    d.screen.classList.remove("lit");
   });
 }
 

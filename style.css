@@ -497,23 +497,56 @@ body.letterbox::before, body.letterbox::after { transform: none; }
   overflow-wrap: anywhere;
   pointer-events: none;
 }
-/* 白紙に書かれたように見せる名前 */
-.fr-name {
+/* 装置の白い画面に映す 3・2・1 と名前 (画面の傾きに合わせて matrix3d で変形) */
+.fr-screen {
   position: fixed;
+  left: 0; top: 0;
+  width: 1000px; height: 615px;
+  transform-origin: 0 0;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+  font-family: "DotGothic16", "Hiragino Sans", "Yu Gothic", monospace;
+  color: rgba(16, 22, 20, .93);
+}
+.fr-screen::after {   /* 液晶の走査線 */
+  content: "";
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, .07) 0 3px, transparent 3px 7px);
+  opacity: 0;
+}
+.fr-screen.lit::after { opacity: 1; }
+.fr-count, .fr-name {
+  position: absolute; left: 50%; top: 50%;
   transform: translate(-50%, -50%);
   white-space: nowrap;
-  font-family: "Shippori Mincho", "Hiragino Mincho ProN", "Yu Mincho", "YuMincho", serif;
-  font-weight: 800;
-  letter-spacing: .1em;
-  text-indent: .1em;
-  color: rgba(28, 22, 18, .9);
-  text-shadow: 0 0 .5px rgba(0, 0, 0, .35);
-  mix-blend-mode: multiply;
-  pointer-events: none;
+  line-height: 1;
   opacity: 0;
-  filter: blur(.3px);
+  text-shadow: 3px 0 0 rgba(16, 22, 20, .18), -2px 0 0 rgba(16, 22, 20, .1);
 }
-.fr-name.on { opacity: 1; transition: opacity .35s ease; }
+.fr-count { font-size: 430px; -webkit-text-stroke: 7px currentColor; }
+.fr-count.on { opacity: 1; animation: frCount 1s linear both; }
+.fr-name { letter-spacing: .08em; text-indent: .08em; -webkit-text-stroke: 3px currentColor; }
+.fr-name.on { opacity: 1; animation: frNameIn .75s steps(1) both, frHum 2.4s 0.8s ease-in-out infinite; }
+@keyframes frCount {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(1.22); filter: blur(6px); }
+  4%   { opacity: 1; transform: translate(-47%, -50%) scale(1.06); filter: blur(0); }
+  7%   { opacity: .25; transform: translate(-53%, -50%) scale(1.03); }
+  10%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  70%  { opacity: 1; }
+  74%  { opacity: .55; }
+  77%  { opacity: 1; }
+  100% { opacity: .9; transform: translate(-50%, -50%) scale(.97); }
+}
+@keyframes frNameIn {
+  0%   { opacity: .3; transform: translate(-46%, -50%) skewX(-12deg); text-shadow: 14px 0 0 rgba(200, 0, 0, .35), -12px 0 0 rgba(0, 120, 160, .35); }
+  12%  { opacity: 1; transform: translate(-53%, -50%); }
+  20%  { opacity: .15; }
+  28%  { opacity: 1; transform: translate(-49%, -51%) skewX(6deg); text-shadow: -8px 0 0 rgba(200, 0, 0, .3), 9px 0 0 rgba(0, 120, 160, .3); }
+  44%  { opacity: .6; transform: translate(-50%, -50%); }
+  56%  { opacity: 1; }
+  100% { opacity: 1; transform: translate(-50%, -50%); }
+}
+@keyframes frHum { 0%, 100% { opacity: 1; } 48% { opacity: .9; } 50% { opacity: .78; } 52% { opacity: .95; } }
 /* 丸くすぼまる暗転 (動画の前後) */
 .fr-iris {
   position: fixed;
