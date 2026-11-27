@@ -155,8 +155,8 @@ function bombTick() {
       : 1 + Math.max(-.9, Math.min(3, err / 1.2));
     BOMB.left = Math.max(0, BOMB.left - rate * dt);
     const text = bombFormat(BOMB.videoAt + Math.ceil(BOMB.left - 1e-6));
-    // カメラが近くに寄って数字が大きく映っているときだけ、1秒ごとに小さな電子音
-    if (text !== BOMB.shown && h > 16) bombBeep(Math.min(1, (h - 16) / 10));
+    // 最前列中央の前振り (動画の直前) の間だけ、数字が大きく映っていれば1秒ごとに小さな電子音
+    if (text !== BOMB.shown && BOMB.beepOK && h > 16) bombBeep(Math.min(1, (h - 16) / 10));
     bombDraw(text);
     BOMB.led.visible = (now % 1000) < 140;
   } else {
@@ -171,6 +171,7 @@ function bombArm(frontRound) {
   BOMB.lcd.material.color.setHex(0x1a2420);
   BOMB.frontRound = frontRound;
   BOMB.blown = false;
+  BOMB.beepOK = false;
   BOMB.cover = false;
   BOMB.roundStart = [];
   if (frontRound < 0) { BOMB.state = "idle"; bombDraw("--:--"); return; }
