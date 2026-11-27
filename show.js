@@ -874,6 +874,7 @@ async function showFinale() {
   const b = banner("全員決定！", 3000, "finale");
   playMcReaction(mcShow?.last === "unbelievable" ? "wow" : "unbelievable", true);
   confettiShower(6000);
+  V.finaleFx?.play(realSeatPositions.map(key => V.seat[key].pivot.position.clone()));
   const palettes = [[0xfbbf24, 0xffffff], [0x2f8cff, 0x7dd3fc], [0xff4fb0, 0xfda4d4], [0xa78bfa, 0xffffff], [0x34d399, 0xfbbf24]];
   for (let i = 0; i < 12; i++) {
     firework(pick(palettes));

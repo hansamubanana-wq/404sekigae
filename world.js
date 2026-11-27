@@ -754,6 +754,11 @@ function buildRoom() {
   trim.position.y = .06;
   podium.add(body, top, trim);
   podium.position.z = PODIUM_Z;
+  // 教卓をまたぐネオンのアーチ (拍に合わせて光る) と、全員決定の演出
+  V.arch = createStageArch(THREE, { z: PODIUM_Z - .9, width: 7.4, height: 3.3 });
+  V.scene.add(V.arch.object);
+  V.finaleFx = createFinale(THREE, { textY: 3.1, textZ: -1.2, textTilt: -.7 });
+  V.scene.add(V.finaleFx.object);
   V.scene.add(podium);
 }
 
@@ -1401,6 +1406,9 @@ function frame(now) {
   });
 
   updateMirrors();
+  V.arch.setBeat(lead.phase, beatOn * groove.power);
+  V.arch.update(dt, t);
+  V.finaleFx.update(dt, t);
   // 名札がふわふわ浮く
   for (const key in V.seat) {
     const o = V.seat[key];
