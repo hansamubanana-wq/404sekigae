@@ -393,20 +393,32 @@ void main(){
 
 // 光の円すい (スポットライト / UFO のビーム)
 const BEAM_VERT = `
-varying float vH; varying vec3 vN; varying vec3 vV;
+varying float vH; varying vec3 vN; varying vec3 vV; varying vec3 vW;
 void main(){
   vH = -position.y;
   vec4 w = modelMatrix * vec4(position, 1.0);
+  vW = w.xyz;
   vN = normalize(mat3(modelMatrix) * normal);
   vV = normalize(cameraPosition - w.xyz);
   gl_Position = projectionMatrix * viewMatrix * w;
 }`;
 const BEAM_FRAG = `
-uniform vec3 uColor; uniform float uOpacity; varying float vH; varying vec3 vN; varying vec3 vV;
+uniform vec3 uColor; uniform float uOpacity, uTime; varying float vH; varying vec3 vN; varying vec3 vV; varying vec3 vW;
+float bh(vec3 p){ return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
+float bn(vec3 p){
+  vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(bh(i), bh(i + vec3(1,0,0)), f.x), mix(bh(i + vec3(0,1,0)), bh(i + vec3(1,1,0)), f.x), f.y),
+             mix(mix(bh(i + vec3(0,0,1)), bh(i + vec3(1,0,1)), f.x), mix(bh(i + vec3(0,1,1)), bh(i + vec3(1,1,1)), f.x), f.y), f.z);
+}
 void main(){
   float edge = pow(abs(dot(normalize(vN), normalize(vV))), 1.6);
   float fade = mix(1.0, .2, vH) * smoothstep(0.0, .05, vH);
-  gl_FragColor = vec4(uColor * edge * fade * uOpacity, 1.0);
+  // 光の中をゆっくり流れるもや と、きらっと光る細かい粒
+  float dust = bn(vW * 1.3 + vec3(0.0, -uTime * .22, uTime * .08));
+  float motes = smoothstep(.83, .97, bn(vW * 6.5 + vec3(uTime * .25, -uTime * .45, uTime * .1)));
+  float core = pow(edge, 3.0);
+  vec3 col = uColor * fade * (edge * (.7 + .6 * dust) + core * .35 + motes * edge * 1.4);
+  gl_FragColor = vec4(col * uOpacity, 1.0);
 }`;
 
 // ガラス球 (抽選マシン)
@@ -681,6 +693,7 @@ function buildRoom() {
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(90, 90),
     new THREE.ShaderMaterial({
+      depthWrite: false,   // 床の下に置いた映り込み (名札の鏡像) が見えるように
       vertexShader: WORLD_VERT,
       fragmentShader: FLOOR_FRAG,
       uniforms: {
@@ -721,6 +734,7 @@ function buildRoom() {
   haze.position.set(0, 6, PODIUM_Z - 1.6);
   haze.renderOrder = -1;
   V.scene.add(haze);
+  mirrorOf(haze, .6);
 
   // 教卓: 青紫のステージ台 + 金の文字
   const podium = new THREE.Group();
@@ -734,6 +748,7 @@ function buildRoom() {
     new THREE.MeshBasicMaterial({ map: canvasTex(podiumCanvas()), transparent: true, depthWrite: false, color: hdr(0xffffff, 1.3) }));
   label.position.set(0, 1.55, PODIUM_Z);
   V.podiumSign = label;
+  mirrorOf(label, .5);
   V.scene.add(label);
   const trim = new THREE.Mesh(new THREE.BoxGeometry(3.12, .03, 1.02), new THREE.MeshBasicMaterial({ color: hdr(0x49e6f9, 2.2) }));
   trim.position.y = .06;
@@ -748,7 +763,7 @@ function beamMesh(color, opacity) {
   return new THREE.Mesh(g, new THREE.ShaderMaterial({
     vertexShader: BEAM_VERT,
     fragmentShader: BEAM_FRAG,
-    uniforms: { uColor: { value: new THREE.Color(color) }, uOpacity: { value: opacity } },
+    uniforms: { uColor: { value: new THREE.Color(color) }, uOpacity: { value: opacity }, uTime: V.uniforms.uTime },
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
@@ -774,6 +789,7 @@ function buildSpots() {
   V.spots = defs.map((d, i) => {
     const m = beamMesh(d.col, .16);
     V.scene.add(m);
+    mirrorOf(m, .75);
     return { mesh: m, from: v3(...d.from), col: new THREE.Color(d.col), phase: i * 1.7, target: v3() };
   });
   V.spotSpeed = 1;
@@ -839,6 +855,48 @@ function buildDesks() {
     ped.setColorAt(index, V.deskParts.color.setScalar(1));
     top.setColorAt(index, V.deskParts.color);
   });
+}
+
+// 床への映り込み: 光るもの (奥の霧と光の帯・ライトの光の筋・教卓の文字) を床で上下に反転して薄く描く。
+// 頂点は元の物の位置で計算し、画面に出す位置だけ y を反転するので、光り方は元と同じになる
+const MIRROR_GL = "gl_Position = projectionMatrix * viewMatrix * vec4(w.x, -w.y, w.z, 1.0);";
+function mirrorOf(src, k) {
+  const m = src.material;
+  let mat;
+  if (m.isShaderMaterial) {
+    const frag = m.fragmentShader.replace(/}\s*$/, "  gl_FragColor.rgb *= uMirrorK;\n}");
+    mat = new THREE.ShaderMaterial({
+      vertexShader: m.vertexShader.replace(/gl_Position\s*=\s*projectionMatrix\s*\*\s*viewMatrix\s*\*\s*w\s*;/, MIRROR_GL),
+      fragmentShader: "uniform float uMirrorK;\n" + frag,
+      uniforms: { ...m.uniforms, uMirrorK: { value: k } },
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    });
+  } else {
+    mat = m.clone();
+    Object.assign(mat, { transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+    mat.opacity = (m.opacity ?? 1) * k;
+  }
+  const dst = new THREE.Mesh(src.geometry, mat);
+  dst.matrixAutoUpdate = false;
+  dst.renderOrder = -2;
+  dst.userData.shader = m.isShaderMaterial;
+  V.scene.add(dst);
+  (V.mirrors ||= []).push({ src, dst });
+  return dst;
+}
+const MIRROR_FLIP = { m: null };
+function updateMirrors() {
+  if (!V.mirrors) return;
+  const F = MIRROR_FLIP.m ||= new THREE.Matrix4().makeScale(1, -1, 1);
+  for (const { src, dst } of V.mirrors) {
+    src.updateWorldMatrix(true, false);
+    let vis = src.visible;
+    for (let q = src.parent; vis && q; q = q.parent) vis = q.visible;
+    dst.visible = vis;
+    // シェーダーは頂点で y を反転するので元の行列のまま、普通の材質は行列ごと反転する
+    if (dst.userData.shader) dst.matrixWorld.copy(src.matrixWorld);
+    else dst.matrixWorld.multiplyMatrices(F, src.matrixWorld);
+  }
 }
 
 function deskGlowLight(light) {
@@ -1339,9 +1397,10 @@ function frame(now) {
     fu.uSpot.value[i].set(s.target.x, s.target.z, lerp(1.9, 1.3, V.spotFocus));
     const color = grooveSpot(s.mesh.material.uniforms.uColor.value, s.col);
     fu.uSpotCol.value[i].set(color.r, color.g, color.b).multiplyScalar(spotPower);
-    s.mesh.material.uniforms.uOpacity.value = .16 * spotPower;
+    s.mesh.material.uniforms.uOpacity.value = .24 * spotPower;
   });
 
+  updateMirrors();
   // 名札がふわふわ浮く
   for (const key in V.seat) {
     const o = V.seat[key];
